@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.01-15:00:32</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.20-13:14:48</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -437,7 +437,7 @@ function updateScoreBand() {
       // Mot-clé trouvé — ne pas afficher "0 pts potentiels" en rouge
       band.style.display = 'none';
     } else {
-      const pot = Math.max(0, 10 - shown * 2);
+      const pot = scoreEtapeLive(shown, sched.blocIdx);
       band.style.display = 'block';
       potEl.textContent = `+${pot} pts potentiels sur cette étape`;
       potEl.style.color = pot > 6 ? 'var(--success)' : pot > 2 ? 'var(--amber)' : 'var(--danger)';
@@ -648,7 +648,7 @@ function renderTeamView() {
       etBg = 'transparent'; etBdr = 'var(--border)';
       // Score potentiel en direct = calcul temporel (cohérent avec l'affichage des indices)
       const shownCur = indicesAffichesNow(sched);
-      etVal = Math.max(0, maxEp - shownCur * 2);
+      etVal = scoreEtapeLive(shownCur, i);
       etStyle = 'font-size:12px;font-weight:400;font-style:italic;color:#2A6A7A';
     } else {
       etBg = 'transparent'; etBdr = 'var(--border)';
@@ -871,6 +871,17 @@ function renderMarcheSchedule(sched, parcours) {
 const ETAPE_NB_INDICES = 5;
 const ETAPE_SCORE_MAX = 10;
 const ETAPE_COUT_INDICE = 2;
+const ETAPE_PENALITE_ERREUR = 1; // points perdus par mauvaise réponse au mot-clé
+// Nombre de mauvaises réponses au mot-clé déjà saisies pour cette étape. Persisté dans
+// scores_etapes sous la clé errmot_<stepIdx> (ignorée du calcul du total : la regex de
+// sommation ne matche que etape_N / ep_N).
+function motcleErreurs(stepIdx) {
+  return getScores()['errmot_'+stepIdx] || 0;
+}
+// Score d'étape en direct : départ 10, −2 par indice affiché, −1 par mauvaise réponse.
+function scoreEtapeLive(shown, stepIdx) {
+  return Math.max(0, ETAPE_SCORE_MAX - shown*ETAPE_COUT_INDICE - motcleErreurs(stepIdx)*ETAPE_PENALITE_ERREUR);
+}
 function indicesAffichesNow(sched) {
   if (!sched || sched.phase !== 'etape') return 0;
   const mult = gameState?.time_multiplier || 1;
@@ -930,7 +941,7 @@ function renderEtapeSchedule(sched, parcours) {
 
   // Nombre d'indices affichés = pur calcul temporel
   const indicesAffiches = indicesAffichesNow(sched);
-  const scoreActuel = Math.max(0, SCORE_MAX - indicesAffiches * ETAPE_COUT_INDICE);
+  const scoreActuel = scoreEtapeLive(indicesAffiches, stepIdx);
   const trancheDurMs = (sched.phaseEnd - sched.phaseStart) / (NB_INDICES + 1);
 
   // Replanifier un simple RE-RENDER à chaque prochain palier (jamais d'écriture en base)
@@ -1206,7 +1217,23 @@ async function validerMotcle() {
 
   const norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
   if (norm(saisi) !== norm(etape.code)) {
-    if (errEl) { errEl.textContent='Mot-clé incorrect, réessayez.'; errEl.style.display='block'; }
+    // Pénalité : −1 pt par mauvaise réponse, persistée dans scores_etapes (clé errmot_<stepIdx>).
+    const scoresErr = getScores();
+    const errKey = 'errmot_'+stepIdx;
+    scoresErr[errKey] = (scoresErr[errKey]||0) + 1;
+    if (teamState) teamState.scores_etapes = scoresErr;
+    if (gameState?.status === 'active') {
+      db.from('jp_team_states').update({scores_etapes: scoresErr}).eq('equipe_nom', currentTeam);
+    }
+    const shownErr = Math.min(ETAPE_NB_INDICES, indicesAffichesNow(sched));
+    const potentiel = scoreEtapeLive(shownErr, stepIdx);
+    motcleSaisi = '';
+    if (input) input.value = '';
+    if (errEl) {
+      errEl.innerHTML = `Mot-clé incorrect — <strong>−${ETAPE_PENALITE_ERREUR} pt</strong>. Score possible : <strong>${potentiel} pt${potentiel!==1?'s':''}</strong>.`;
+      errEl.style.display = 'block';
+    }
+    updateScoreBand(); // rafraîchir le bandeau sans effacer le message ni le focus
     return;
   }
 
@@ -1220,7 +1247,7 @@ async function validerMotcle() {
   const remainingV = (schedV.phaseEnd - virtualNowV) / 1000;
   // Score = 0 si temps écoulé, sinon basé sur le nombre d'indices affichés (calcul temporel)
   const shown = Math.min(5, indicesAffichesNow(schedV));
-  const scoreEtape = remainingV <= 0 ? 0 : Math.max(0, 10 - shown * 2);
+  const scoreEtape = remainingV <= 0 ? 0 : scoreEtapeLive(shown, stepIdx);
 
   // 1. Mettre à jour teamState LOCAL immédiatement
   const scoresLocal = getScores();
