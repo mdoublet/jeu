@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.20-13:14:48</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.21-15:32:51</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -371,7 +371,7 @@ input[type=file]{display:none}
       <input type="number" id="jdpPerteTemps" value="1"><input type="number" id="jdpDureeMax" value="10">
       <input type="number" id="jdpScoreEpreuve" value="10"><div id="jdpScoringPreview"></div><span id="jdpScoringSaveMsg"></span>
     </div>
-    <div id="jdpScores" style="display:none"><div id="jdpStatGrid"></div><div id="jdpLeaderboard"></div><div id="jdpScoreDetail"></div></div>
+    <div id="jdpScores" style="display:none"><div id="jdpStatGrid"></div><div id="jdpDiaporama"></div><div id="jdpLeaderboard"></div><div id="jdpScoreDetail"></div></div>
   </div>
 </div>
 
@@ -2836,7 +2836,8 @@ async function renderAdminArchive(){
 
     html+=`<div style="margin-bottom:32px">
       <div style="font-size:15px;font-weight:500;color:var(--ink);padding:10px 14px;background:var(--gold-light);border-radius:var(--radius);margin-bottom:14px;display:flex;align-items:center;gap:8px">
-        <span>📁</span><span>${label}</span>
+        <span>📁</span><span style="flex:1">${label}</span>
+        <button class="btn btn-sm" style="padding:5px 12px;font-size:12px" data-label="${(label||'').replace(/"/g,'&quot;')}" onclick="openDiaporamaArchive(this.dataset.label)">📽️ Diaporama</button>
       </div>`;
 
     // ---- Classement ----
@@ -3034,6 +3035,7 @@ async function confirmReset(){
   //    Une ligne scores_archive par étape et par épreuve de chaque équipe.
   const {data:tsRows}=await db.from('jp_team_states').select('equipe_nom,parcours,scores_etapes,total_score');
   const jdpArchiveRows=[];
+  const etapeDetailRows=[]; // détail par étape pour le diaporama (erreurs mot-clé + trouvé)
   (tsRows||[]).forEach(ts=>{
     const sc=jdpTeamScores(ts);
     const parcours=jdpTeamParcours(ts,ts.equipe_nom);
@@ -3042,6 +3044,14 @@ async function confirmReset(){
       const ep=et?.epreuveId?appData.epreuves.find(e=>String(e.id)===String(et.epreuveId)):(bloc.epreuveId?appData.epreuves.find(e=>String(e.id)===String(bloc.epreuveId)):null);
       if(sc['etape_'+i]!==undefined){
         jdpArchiveRows.push({equipe_nom:ts.equipe_nom,epreuve_id:i*2,epreuve_titre:(et?.nom||'Étape'),score:sc['etape_'+i]||0,archive_label:label,archived_at:now});
+        etapeDetailRows.push({
+          archive_label:label, jeu:'etape', equipe_nom:ts.equipe_nom,
+          question_texte:(et?.nom||('Étape '+(i+1))),
+          reponse_correcte:(et?.code||''),
+          reponse_donnee:String(sc['errmot_'+i]||0), // nb de mauvaises réponses
+          correct:(sc['etape_'+i]||0)>0,             // mot-clé trouvé (score > 0)
+          archived_at:now
+        });
       }
       if(ep && sc['ep_'+i]!==undefined){
         jdpArchiveRows.push({equipe_nom:ts.equipe_nom,epreuve_id:i*2+1,epreuve_titre:(ep.title||'Épreuve'),score:sc['ep_'+i]||0,archive_label:label,archived_at:now});
@@ -3049,6 +3059,10 @@ async function confirmReset(){
     });
   });
   if(jdpArchiveRows.length) await db.from('scores_archive').insert(jdpArchiveRows);
+  if(etapeDetailRows.length){
+    try { await db.from('reponses_detail_archive').upsert(etapeDetailRows,{onConflict:'archive_label,jeu,equipe_nom,question_texte'}); }
+    catch(e){ console.error('Archive détail étapes échec:',e); }
+  }
 
   // 4. Re-label __live__ detail records with the real archive label
   await db.from('reponses_detail_archive')
@@ -4287,6 +4301,22 @@ function renderJdpScores(){
   const lb=document.getElementById('jdpLeaderboard');
   const det=document.getElementById('jdpScoreDetail');
   if(!sg||!lb||!det) return;
+  const diap=document.getElementById('jdpDiaporama');
+  if(diap){
+    diap.innerHTML=`<div class="card">
+      <div class="card-title">📽️ Diaporama récap</div>
+      <p style="font-size:13px;color:var(--ink-muted);margin-bottom:12px">Projetez le déroulé du jeu (énigmes des étapes, quizz, photos, scores) pour les participants. S'ouvre en plein écran, défilement automatique.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+        <div><div class="field-label">Durée / slide (s)</div><input type="number" id="diapoDur" min="2" value="9" style="width:82px;text-align:center"></div>
+        <div><div class="field-label">Durée / photo (s)</div><input type="number" id="diapoDurPhoto" min="2" value="5" style="width:82px;text-align:center"></div>
+        <div><div class="field-label">Scores finaux (s)</div><input type="number" id="diapoDurFinal" min="2" value="22" style="width:82px;text-align:center"></div>
+        <button class="btn btn-sm" onclick="saveDiapoDurations()">💾 Durées</button>
+        <span class="save-msg" id="diapoSaveMsg">Sauvegardé ✓</span>
+      </div>
+      <button class="btn btn-gold" onclick="openDiaporamaLive()">▶ Lancer le diaporama (partie en cours)</button>
+    </div>`;
+    fillDiapoDurations();
+  }
   const ranked=teams.map(t=>({name:t,total:jdpData.teamStates[t]?.total_score||0})).sort((a,b)=>b.total-a.total);
   const maxPts=Math.max(...ranked.map(r=>r.total),1);
   const medals=['🥇','🥈','🥉'],rc=['gold','silver','bronze'];
@@ -4301,6 +4331,30 @@ function renderJdpScores(){
       return`<tr><td style="padding:8px;font-weight:500;border-bottom:1px solid var(--border)">${t}</td>${Array.from({length:nb},(_,i)=>`<td style="padding:8px;text-align:center;border-bottom:1px solid var(--border);color:var(--ink-muted)">${scores[i]??'—'}</td>`).join('')}<td style="padding:8px;text-align:right;font-weight:500;color:var(--gold-dark);border-bottom:1px solid var(--border)">${ts?.total_score||0}</td></tr>`;
     }).join('')}</tbody></table></div>`;
 }
+
+// ===================== DIAPORAMA =====================
+async function fillDiapoDurations(){
+  try{
+    const {data}=await db.from('jp_config').select('key,value').in('key',['diaporama_duree','diaporama_duree_photo','diaporama_duree_final']);
+    const c={}; (data||[]).forEach(r=>c[r.key]=r.value);
+    const set=(id,v,d)=>{const el=document.getElementById(id); if(el) el.value=(v!=null&&v!=='')?v:d;};
+    set('diapoDur',c.diaporama_duree,9);
+    set('diapoDurPhoto',c.diaporama_duree_photo,5);
+    set('diapoDurFinal',c.diaporama_duree_final,22);
+  }catch(e){}
+}
+async function saveDiapoDurations(){
+  const g=id=>Math.max(2,parseInt(document.getElementById(id)?.value)||0);
+  await Promise.all([
+    db.from('jp_config').upsert({key:'diaporama_duree',value:String(g('diapoDur'))},{onConflict:'key'}),
+    db.from('jp_config').upsert({key:'diaporama_duree_photo',value:String(g('diapoDurPhoto'))},{onConflict:'key'}),
+    db.from('jp_config').upsert({key:'diaporama_duree_final',value:String(g('diapoDurFinal'))},{onConflict:'key'}),
+  ]);
+  showSaveMsg('diapoSaveMsg');
+  showToast({icon:'📽️',title:'Durées du diaporama enregistrées',duration:2500});
+}
+function openDiaporamaLive(){ window.open('diaporama.html?mode=live','_blank'); }
+function openDiaporamaArchive(label){ window.open('diaporama.html?mode=archive&label='+encodeURIComponent(label||''),'_blank'); }
 
 init();
 </script>

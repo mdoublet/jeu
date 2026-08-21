@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caroline & Marc — Diaporama</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@300;400;500;600&family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --cream:#EEF4F7;--warm-white:#F5F9FB;
+  --gold:#1E6A7A;--gold-light:#C8DFE5;--gold-dark:#134D5A;
+  --ink:#0D2B33;--ink-soft:#2A4F5A;--ink-muted:#5A7D87;
+  --border:#B8D0D8;--success-bg:#E6F4EC;--success:#1E7A45;
+  --danger-bg:#FCEAEA;--danger:#A32020;--amber-bg:#FFF8EC;--amber:#B8620A;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:'DM Sans',sans-serif;background:var(--gold-dark);color:var(--ink);overflow:hidden}
+
+#loader{position:fixed;inset:0;background:var(--gold-dark);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:100;color:#fff}
+.ring{width:44px;height:44px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Stage plein écran */
+#stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:3vh 3vw;background:radial-gradient(circle at 50% 30%,#1a5f6f 0%,#0d3843 100%)}
+.slide{width:100%;max-width:1100px;max-height:94vh;background:var(--warm-white);border-radius:22px;box-shadow:0 20px 70px rgba(0,0,0,.4);padding:clamp(20px,4vh,44px) clamp(20px,4vw,54px);overflow-y:auto;animation:slideIn .5s ease}
+@keyframes slideIn{from{opacity:0;transform:translateY(18px) scale(.98)}to{opacity:1;transform:none}}
+.slide::-webkit-scrollbar{width:8px}.slide::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+
+.kicker{font-size:clamp(12px,1.5vw,15px);font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:10px;display:flex;align-items:center;gap:10px}
+.kicker .num{background:var(--gold);color:#fff;border-radius:20px;padding:2px 12px;font-size:.9em}
+.title{font-family:'Playfair Display',serif;font-size:clamp(26px,4.4vw,46px);font-weight:600;color:var(--gold-dark);line-height:1.1;margin-bottom:18px}
+.subtitle{font-size:clamp(15px,2vw,20px);color:var(--ink-muted);margin-bottom:20px}
+.enigme{font-family:'Playfair Display',serif;font-style:italic;font-size:clamp(18px,2.6vw,27px);line-height:1.6;color:var(--ink);background:var(--cream);border-left:5px solid var(--gold);border-radius:10px;padding:18px 22px;margin-bottom:22px}
+
+.indices{display:flex;flex-direction:column;gap:8px;margin-bottom:22px}
+.indice{display:flex;gap:12px;align-items:flex-start;background:var(--warm-white);border:1px solid var(--border);border-radius:10px;padding:11px 15px}
+.indice .n{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:var(--gold-light);color:var(--gold-dark);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
+.indice .t{font-size:clamp(14px,1.7vw,18px);font-style:italic;color:var(--ink-soft);line-height:1.5}
+.motcle{display:inline-flex;align-items:center;gap:10px;background:var(--gold);color:#fff;border-radius:14px;padding:12px 22px;font-size:clamp(18px,2.6vw,26px);font-weight:600;font-family:'Playfair Display',serif;letter-spacing:1px;margin-bottom:8px}
+
+.teamgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.teamcard{border:2px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--warm-white)}
+.teamcard.ok{border-color:var(--success);background:var(--success-bg)}
+.teamcard.ko{border-color:var(--danger);background:var(--danger-bg)}
+.teamcard.empty{opacity:.4;border-style:dashed}
+.tc-name{font-size:clamp(15px,1.9vw,20px);font-weight:600;color:var(--ink);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.tc-pts{font-family:'Playfair Display',serif;font-weight:700;color:var(--gold-dark)}
+.tc-line{font-size:clamp(13px,1.5vw,16px);color:var(--ink-soft);line-height:1.5}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 10px;border-radius:20px}
+.pill.ok{background:var(--success);color:#fff}.pill.ko{background:var(--danger);color:#fff}
+.pill.neutral{background:var(--gold-light);color:var(--gold-dark)}
+
+.answer-good{background:var(--success-bg);border:1px solid var(--success);color:var(--success);border-radius:10px;padding:10px 16px;font-size:clamp(16px,2.2vw,22px);font-weight:600;display:inline-flex;gap:8px;align-items:center;margin-bottom:14px}
+.comment{background:var(--amber-bg);border-radius:10px;padding:12px 16px;font-size:clamp(14px,1.7vw,18px);color:var(--amber);line-height:1.55;margin-bottom:18px}
+
+/* Photo slide */
+.photo-wrap{display:flex;flex-direction:column;align-items:center;gap:16px}
+.photo-img{max-width:100%;max-height:52vh;border-radius:14px;border:1px solid var(--border);object-fit:contain;background:var(--cream)}
+.photo-meta{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center}
+.chip{font-size:clamp(13px,1.6vw,17px);font-weight:600;padding:6px 16px;border-radius:24px;background:var(--gold-light);color:var(--gold-dark)}
+.chip.ok{background:var(--success);color:#fff}.chip.ko{background:var(--danger);color:#fff}
+.chip.pts{background:var(--gold-dark);color:#fff}
+
+/* Récap */
+.recap-table{width:100%;border-collapse:collapse;font-size:clamp(14px,1.8vw,19px)}
+.recap-table th,.recap-table td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:center}
+.recap-table th:first-child,.recap-table td:first-child{text-align:left;font-weight:600}
+.recap-table thead th{background:var(--cream);color:var(--ink-muted);font-size:.8em;text-transform:uppercase;letter-spacing:.5px}
+.recap-table tfoot td{font-weight:700;color:var(--gold-dark);border-top:2px solid var(--gold);font-size:1.05em}
+.recap-rank{display:inline-flex;align-items:center;gap:8px}
+.recap-medal{font-size:1.3em}
+
+/* Titre grand écran (intro / section) */
+.cover{text-align:center}
+.cover .mono{font-family:'Dancing Script',cursive;font-size:clamp(34px,6vw,64px);color:var(--gold-dark);font-weight:600}
+.cover .big{font-family:'Playfair Display',serif;font-size:clamp(30px,5vw,56px);font-weight:600;color:var(--gold-dark);margin-top:6px}
+
+/* Controls */
+#controls{position:fixed;bottom:0;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:14px;padding:14px;z-index:50;transition:opacity .3s;background:linear-gradient(to top,rgba(13,56,67,.55),transparent)}
+#controls.hidden{opacity:0;pointer-events:none}
+.cbtn{width:46px;height:46px;border-radius:50%;border:none;background:rgba(255,255,255,.9);color:var(--gold-dark);font-size:19px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.cbtn:hover{background:#fff}
+.cbtn.big{width:56px;height:56px;font-size:23px}
+#counter{position:fixed;top:14px;right:16px;z-index:50;background:rgba(0,0,0,.35);color:#fff;font-size:13px;font-weight:600;padding:5px 12px;border-radius:20px;transition:opacity .3s}
+#counter.hidden{opacity:0}
+#progressbar{position:fixed;top:0;left:0;height:4px;background:var(--gold-light);z-index:60;transition:width .25s linear;box-shadow:0 0 8px rgba(200,223,229,.6)}
+#errBox{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--gold-dark);color:#fff;z-index:200;padding:30px;text-align:center}
+.title-badge{display:inline-block;font-size:clamp(13px,1.6vw,16px);font-weight:600;color:#fff;background:var(--gold);border-radius:20px;padding:4px 16px;margin-bottom:14px}
+</style>
+</head>
+<body>
+<div id="progressbar" style="width:0"></div>
+<div id="counter" class="hidden">–</div>
+<div id="loader"><div class="ring"></div><div>Chargement du diaporama…</div></div>
+<div id="stage" style="display:none"></div>
+<div id="errBox"><div style="font-size:40px">📽️</div><div id="errMsg" style="font-size:18px;max-width:520px;line-height:1.6"></div></div>
+
+<div id="controls" class="hidden">
+  <button class="cbtn" title="Précédent (←)" onclick="go(-1)">⏮</button>
+  <button class="cbtn big" id="playBtn" title="Pause / Lecture (Espace)" onclick="togglePlay()">⏸</button>
+  <button class="cbtn" title="Suivant (→)" onclick="go(1)">⏭</button>
+  <button class="cbtn" title="Plein écran (F)" onclick="toggleFull()">⛶</button>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://ktpiwlcazmodfezrwlqf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_rcKC1bFMte1P2qW6OSdiTw_w4KoVfQl';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false, autoRefreshToken:false } });
+
+const params = new URLSearchParams(location.search);
+const MODE  = params.get('mode') === 'archive' ? 'archive' : 'live';
+const LABEL = params.get('label') || null;
+
+// Durées (secondes) — chargées depuis jp_config, avec valeurs par défaut
+let DUR = { slide:9, photo:5, final:22 };
+
+const TEAM_COLORS = ['#1E6A7A','#B8620A','#7A3B8A','#2A7A45','#A32050','#3A5A9A'];
+function norm(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-_'’\s]+/g,' ').trim(); }
+function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+async function q(query){ try{ const r=await query; return r.data||[]; }catch(e){ return []; } }
+
+let SLIDES = [];   // { html, dur }
+let idx = 0, playing = true, timer = null, tickStart = 0, tickRemain = 0;
+
+// ===================== CHARGEMENT =====================
+async function load(){
+  // Config commune (persiste au travers des resets)
+  const [configRows, epreuves, anecdotes, joueurs, villesBac, equipes] = await Promise.all([
+    q(db.from('jp_config').select('*')),
+    q(db.from('epreuves').select('*').order('id')),
+    q(db.from('anecdotes').select('*').order('ordre')),
+    q(db.from('joueurs').select('nom,equipe_nom,anecdote,commentaire')),
+    q(db.from('villes_bac').select('lettre,ville')),
+    q(db.from('equipes').select('nom').order('id')),
+  ]);
+
+  const config = {};
+  configRows.forEach(r => { config[r.key] = r.value; });
+  DUR.slide = num(config['diaporama_duree'], 9);
+  DUR.photo = num(config['diaporama_duree_photo'], 5);
+  DUR.final = num(config['diaporama_duree_final'], 22);
+
+  let etapes = [];
+  try { etapes = JSON.parse(config['jdp_etapes']||'[]'); } catch(e) {}
+
+  const villes = {}; // lettre -> [villes normalisées]
+  villesBac.forEach(r => { const l=(r.lettre||'').toUpperCase(); (villes[l]=villes[l]||[]).push(norm(r.ville)); });
+
+  let teams = equipes.map(e => e.nom);
+
+  // Données de partie selon le mode
+  let scoresByTeam = {};       // team -> { etape:{nom:{pts,errors,found}}, ep:{titre:pts} }
+  let photos = [];             // {equipe, challenge, statut, points, data}
+  let detail = { maries:[], invites:[], etape:[] }; // rows reponses_detail
+  let pbByTeam = {};           // team -> {lettre: ville}
+  let totals = {};             // team -> total
+
+  if (MODE === 'live') {
+    const [tsRows, photoRows, pbRows, detRows] = await Promise.all([
+      q(db.from('jp_team_states').select('equipe_nom,parcours,scores_etapes,total_score')),
+      q(db.from('photos').select('equipe_nom,challenge_num,attempt_num,statut,points,data').order('created_at')),
+      q(db.from('petit_bac_reponses').select('equipe_nom,lettre,ville_donnee')),
+      q(db.from('reponses_detail_archive').select('*').eq('archive_label','__live__')),
+    ]);
+    if (!teams.length) teams = [...new Set(tsRows.map(t=>t.equipe_nom))];
+    tsRows.forEach(ts => {
+      const sc = parseScores(ts.scores_etapes);
+      let parc = []; try { parc = JSON.parse(ts.parcours||'[]'); } catch(e) {}
+      const et = {}, ep = {};
+      parc.forEach((bloc,i) => {
+        const etCfg = etapes.find(e=>String(e.id)===String(bloc.etapeId));
+        if (etCfg) {
+          const pts = sc['etape_'+i];
+          et[etCfg.nom] = { pts: (pts??null), errors: sc['errmot_'+i]||0, found: (pts||0)>0 };
+        }
+      });
+      scoresByTeam[ts.equipe_nom] = { etape:et, ep };
+      totals[ts.equipe_nom] = ts.total_score||0;
+    });
+    photos = photoRows.map(p=>({equipe:p.equipe_nom,challenge:p.challenge_num||1,statut:p.statut,points:p.points||0,data:p.data}));
+    pbRows.forEach(r=>{ (pbByTeam[r.equipe_nom]=pbByTeam[r.equipe_nom]||{})[r.lettre]=r.ville_donnee; });
+    detRows.forEach(r=>{ if(detail[r.jeu]) detail[r.jeu].push(r); });
+  } else {
+    const [scoreRows, photoRows, pbRows, detRows] = await Promise.all([
+      q(db.from('scores_archive').select('*').eq('archive_label',LABEL)),
+      q(db.from('photos_archive').select('*').eq('archive_label',LABEL)),
+      q(db.from('petit_bac_archive').select('*').eq('archive_label',LABEL)),
+      q(db.from('reponses_detail_archive').select('*').eq('archive_label',LABEL)),
+    ]);
+    if (!teams.length) teams = [...new Set(scoreRows.map(s=>s.equipe_nom))];
+    // scores_archive : epreuve_id pair = étape (titre = nom), impair = épreuve
+    const etDetail = {}; // team -> {nom:{errors,found}}
+    detRows.forEach(r=>{
+      if(detail[r.jeu]) detail[r.jeu].push(r);
+      if(r.jeu==='etape'){ (etDetail[r.equipe_nom]=etDetail[r.equipe_nom]||{})[r.question_texte]={errors:parseInt(r.reponse_donnee)||0,found:!!r.correct}; }
+    });
+    scoreRows.forEach(r=>{
+      const t=r.equipe_nom; scoresByTeam[t]=scoresByTeam[t]||{etape:{},ep:{}};
+      totals[t]=(totals[t]||0)+(r.score||0);
+      if((r.epreuve_id||0)%2===0){
+        const d=(etDetail[t]||{})[r.epreuve_titre]||{};
+        scoresByTeam[t].etape[r.epreuve_titre]={pts:r.score,errors:d.errors||0,found:d.found!==undefined?d.found:(r.score>0)};
+      } else {
+        scoresByTeam[t].ep[r.epreuve_titre]=r.score;
+      }
+    });
+    photos = photoRows.map(p=>({equipe:p.equipe_nom,challenge:p.challenge_num||1,statut:p.statut,points:p.points||0,data:p.data}));
+    pbRows.forEach(r=>{ (pbByTeam[r.equipe_nom]=pbByTeam[r.equipe_nom]||{})[r.lettre]=r.ville_donnee; });
+  }
+
+  teams = teams.filter(Boolean);
+  const model = { teams, etapes, epreuves, anecdotes, joueurs, villes, scoresByTeam, photos, detail, pbByTeam, totals };
+  buildSlides(model);
+
+  if (!SLIDES.length) { showError("Aucune donnée à afficher pour ce diaporama."); return; }
+  document.getElementById('loader').style.display='none';
+  document.getElementById('stage').style.display='flex';
+  start();
+}
+function num(v,d){ const n=parseFloat(v); return (isFinite(n)&&n>0)?n:d; }
+function parseScores(raw){
+  if(!raw) return {}; if(typeof raw==='object'&&!Array.isArray(raw)) return raw;
+  try{ const p=JSON.parse(raw); return (p&&!Array.isArray(p))?p:{}; }catch(e){ return {}; }
+}
+
+// ===================== CONSTRUCTION DES SLIDES =====================
+function buildSlides(m){
+  const teamColor = {}; m.teams.forEach((t,i)=>teamColor[t]=TEAM_COLORS[i%TEAM_COLORS.length]);
+
+  // Slide d'intro
+  SLIDES.push({ dur: DUR.slide, html: `<div class="slide cover">
+    <div class="mono">Caroline &amp; Marc</div>
+    <div class="big">Le récap du jeu</div>
+    <div class="subtitle" style="margin-top:16px">${MODE==='archive'?('Session : '+esc(LABEL||'')):'Partie en cours'}</div>
+  </div>`});
+
+  // 1) ÉTAPES (dans l'ordre de la config)
+  m.etapes.forEach((et, i) => {
+    // n'afficher que les étapes réellement jouées (au moins une équipe a un score)
+    const played = m.teams.some(t => m.scoresByTeam[t]?.etape?.[et.nom]);
+    if (!played && !(et.enigme||'').trim()) return;
+    const indicesTxt = (et.indices||[]).filter((x,k)=>k<5 && (x||'').trim());
+    const teamsHtml = m.teams.map(t => {
+      const r = m.scoresByTeam[t]?.etape?.[et.nom];
+      if (!r) return `<div class="teamcard empty"><div class="tc-name">${esc(t)}</div><div class="tc-line">—</div></div>`;
+      const cls = r.found ? 'ok' : 'ko';
+      return `<div class="teamcard ${cls}">
+        <div class="tc-name">${esc(t)}<span class="tc-pts">${r.pts??0} pts</span></div>
+        <div class="tc-line">${r.found?'✅ Mot-clé trouvé':'❌ Mot-clé non trouvé'}</div>
+        <div class="tc-line">${r.errors>0?('✗ '+r.errors+' mauvaise'+(r.errors>1?'s':'')+' réponse'+(r.errors>1?'s':'')+' (−'+r.errors+' pt'+(r.errors>1?'s':'')+')'):'Aucune erreur'}</div>
+      </div>`;
+    }).join('');
+    SLIDES.push({ dur: DUR.slide, html: `<div class="slide">
+      <div class="kicker"><span class="num">Étape ${i+1}</span> ${esc(et.nom||'')}</div>
+      ${(et.enigme||'').trim()?`<div class="enigme">${esc(et.enigme).replace(/\n/g,'<br>')}</div>`:''}
+      ${indicesTxt.length?`<div class="indices">${indicesTxt.map((x,k)=>`<div class="indice"><div class="n">${k+1}</div><div class="t">${esc(x).replace(/\n/g,'<br>')}</div></div>`).join('')}</div>`:''}
+      ${(et.code||'').trim()?`<div><span class="motcle">🔑 ${esc(et.code)}</span></div>`:''}
+      <div style="height:14px"></div>
+      <div class="teamgrid">${teamsHtml}</div>
+    </div>`});
+  });
+
+  // 2) QUIZZ DES MARIÉS (une slide par question)
+  const maries = groupBy(m.detail.maries, 'question_texte');
+  const mariesOrder = orderByAnec(Object.keys(maries), m.anecdotes);
+  mariesOrder.forEach((qtxt, i) => {
+    const rows = maries[qtxt];
+    const anec = m.anecdotes.find(a => norm(a.celui_qui)===norm(qtxt));
+    const bonne = rows[0]?.reponse_correcte || anec?.reponse || '';
+    const comm = anec?.commentaire || '';
+    const teamsHtml = m.teams.map(t => {
+      const r = rows.find(x => x.equipe_nom===t);
+      if (!r) return `<div class="teamcard empty"><div class="tc-name">${esc(t)}</div><div class="tc-line">—</div></div>`;
+      return `<div class="teamcard ${r.correct?'ok':'ko'}">
+        <div class="tc-name">${esc(t)}<span class="pill ${r.correct?'ok':'ko'}">${r.correct?'✓':'✗'}</span></div>
+        <div class="tc-line">Réponse : <strong>${esc(r.reponse_donnee||'—')}</strong></div>
+      </div>`;
+    }).join('');
+    SLIDES.push({ dur: DUR.slide, html: `<div class="slide">
+      <div class="kicker"><span class="num">Mariés ${i+1}</span> Quizz des mariés</div>
+      <div class="title">${esc(qtxt)}</div>
+      <div class="answer-good">✅ Bonne réponse : ${esc(bonne)}</div>
+      ${comm?`<div class="comment">💡 ${esc(comm).replace(/\n/g,'<br>')}</div>`:''}
+      <div class="teamgrid">${teamsHtml}</div>
+    </div>`});
+  });
+
+  // 3) QUIZZ DES INVITÉS (4 par 4 : une slide par rang de participant, un panneau par équipe)
+  const invByTeam = {}; m.teams.forEach(t=>invByTeam[t]=[]);
+  (m.detail.invites||[]).forEach(r => { if(invByTeam[r.equipe_nom]) invByTeam[r.equipe_nom].push(r); });
+  // ordonner les anecdotes de chaque équipe par ordre stable
+  m.teams.forEach(t => invByTeam[t].sort((a,b)=>norm(a.question_texte).localeCompare(norm(b.question_texte))));
+  const maxLen = Math.max(0, ...m.teams.map(t=>invByTeam[t].length));
+  for (let k=0; k<maxLen; k++){
+    const panels = m.teams.map(t => {
+      const r = invByTeam[t][k];
+      if (!r) return `<div class="teamcard empty"><div class="tc-name">${esc(t)}</div><div class="tc-line">—</div></div>`;
+      const joueur = m.joueurs.find(j=>norm(j.nom)===norm(r.reponse_correcte) && j.equipe_nom===t) || m.joueurs.find(j=>norm(j.nom)===norm(r.reponse_correcte));
+      const comm = joueur?.commentaire || '';
+      return `<div class="teamcard ${r.correct?'ok':'ko'}">
+        <div class="tc-name" style="font-size:clamp(14px,1.6vw,17px)">${esc(t)}<span class="pill ${r.correct?'ok':'ko'}">${r.correct?'✓':'✗'}</span></div>
+        <div class="tc-line" style="font-style:italic;margin-bottom:6px">« ${esc(r.question_texte)} »</div>
+        <div class="tc-line">Réponse : <strong>${esc(r.reponse_correcte)}</strong></div>
+        <div class="tc-line">Donné : ${esc(r.reponse_donnee||'—')}</div>
+        ${comm?`<div class="tc-line" style="color:var(--amber);margin-top:4px">💡 ${esc(comm)}</div>`:''}
+      </div>`;
+    }).join('');
+    SLIDES.push({ dur: DUR.slide, html: `<div class="slide">
+      <div class="kicker"><span class="num">Invités ${k+1}</span> Quizz des invités — qui est-ce ?</div>
+      <div class="subtitle">Une anecdote par équipe · retrouvez de quel invité il s'agit</div>
+      <div class="teamgrid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">${panels}</div>
+    </div>`});
+  }
+
+  // 4) PETIT BAC DES VILLES (si des réponses existent) — tableau condensé
+  if (Object.keys(m.pbByTeam).length){
+    const letters = [...new Set(Object.values(m.pbByTeam).flatMap(o=>Object.keys(o)))].sort();
+    if (letters.length){
+      const head = `<th>Lettre</th>${m.teams.map(t=>`<th>${esc(t)}</th>`).join('')}`;
+      const body = letters.map(l=>{
+        const cells = m.teams.map(t=>{
+          const v=(m.pbByTeam[t]||{})[l];
+          const ok = v && (m.villes[l]||[]).includes(norm(v));
+          return `<td style="color:${v?(ok?'var(--success)':'var(--danger)'):'var(--ink-muted)'};font-weight:${ok?'600':'400'}">${esc(v||'—')}${v?(ok?' ✓':' ✗'):''}</td>`;
+        }).join('');
+        return `<tr><td>${esc(l)}</td>${cells}</tr>`;
+      }).join('');
+      const tot = m.teams.map(t=>{
+        const o=m.pbByTeam[t]||{}; let n=0; Object.keys(o).forEach(l=>{ if(o[l]&&(m.villes[l]||[]).includes(norm(o[l]))) n++; }); return n;
+      });
+      SLIDES.push({ dur: DUR.slide, html: `<div class="slide">
+        <div class="kicker"><span class="num">Villes</span> Le petit bac des villes</div>
+        <table class="recap-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody>
+        <tfoot><tr><td>Total</td>${tot.map(n=>`<td>${n}</td>`).join('')}</tr></tfoot></table>
+      </div>`});
+    }
+  }
+
+  // 5) PHOTOS (une par slide)
+  m.photos.filter(p=>p.data).forEach((p, i) => {
+    const who = p.challenge===2 ? 'Marc' : 'Caroline';
+    const valide = p.statut==='validee';
+    const refus  = p.statut==='refusee';
+    SLIDES.push({ dur: DUR.photo, html: `<div class="slide">
+      <div class="kicker" style="justify-content:center"><span class="num">Photo ${i+1}</span> Défi photo</div>
+      <div class="photo-wrap">
+        <img class="photo-img" src="${p.data}" alt="">
+        <div class="photo-meta">
+          <span class="chip">Équipe ${esc(p.equipe)}</span>
+          <span class="chip">Défi : ${who}</span>
+          <span class="chip ${valide?'ok':refus?'ko':''}">${valide?'✅ Validée':refus?'❌ Refusée':'⏳ En attente'}</span>
+          <span class="chip pts">${p.points||0} pt${(p.points||0)!==1?'s':''}</span>
+        </div>
+      </div>
+    </div>`});
+  });
+
+  // 6) RÉCAP FINAL DES SCORES
+  const ranked = m.teams.map(t=>({t,total:m.totals[t]||0})).sort((a,b)=>b.total-a.total);
+  const medals=['🥇','🥈','🥉'];
+  // colonnes : étapes + épreuves distinctes rencontrées
+  const etNames = m.etapes.map(e=>e.nom).filter(n=>m.teams.some(t=>m.scoresByTeam[t]?.etape?.[n]));
+  const epNames = [...new Set(m.teams.flatMap(t=>Object.keys(m.scoresByTeam[t]?.ep||{})))];
+  const head = `<th>Équipe</th>${etNames.map(n=>`<th>${esc(shortName(n))}</th>`).join('')}${epNames.map(n=>`<th>${esc(shortName(n))}</th>`).join('')}<th>Total</th>`;
+  const body = ranked.map((r,i)=>{
+    const sc=m.scoresByTeam[r.t]||{etape:{},ep:{}};
+    const etCells=etNames.map(n=>`<td>${sc.etape[n]?.pts??'—'}</td>`).join('');
+    const epCells=epNames.map(n=>`<td>${sc.ep[n]??'—'}</td>`).join('');
+    return `<tr><td><span class="recap-rank"><span class="recap-medal">${medals[i]||(i+1)}</span> ${esc(r.t)}</span></td>${etCells}${epCells}<td style="font-weight:700;color:var(--gold-dark)">${r.total}</td></tr>`;
+  }).join('');
+  SLIDES.push({ dur: DUR.final, html: `<div class="slide">
+    <div class="title-badge">Classement final</div>
+    <div class="title" style="margin-bottom:22px">🏆 Récapitulatif des scores</div>
+    <div style="overflow-x:auto"><table class="recap-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
+  </div>`});
+}
+
+function shortName(n){ n=(n||'').toString(); return n.length>14?n.slice(0,13)+'…':n; }
+function groupBy(rows, key){ const o={}; (rows||[]).forEach(r=>{ (o[r[key]]=o[r[key]]||[]).push(r); }); return o; }
+function orderByAnec(keys, anecdotes){
+  const order = new Map(); (anecdotes||[]).forEach((a,i)=>order.set(norm(a.celui_qui),i));
+  return keys.slice().sort((a,b)=>{ const ia=order.has(norm(a))?order.get(norm(a)):999, ib=order.has(norm(b))?order.get(norm(b)):999; return ia-ib; });
+}
+
+// ===================== LECTEUR =====================
+function start(){ idx=0; render(); }
+function render(){
+  const stage = document.getElementById('stage');
+  stage.innerHTML = SLIDES[idx].html;
+  document.getElementById('counter').textContent = (idx+1)+' / '+SLIDES.length;
+  if (playing) schedule();
+}
+function schedule(){
+  clearTimer();
+  const dur = (SLIDES[idx].dur || DUR.slide) * 1000;
+  tickStart = Date.now(); tickRemain = dur;
+  animateProgress(dur, dur);
+  timer = setTimeout(()=>{ next(); }, dur);
+}
+function animateProgress(remain, total){
+  const bar = document.getElementById('progressbar');
+  const pct = total>0 ? (1 - remain/total)*100 : 0;
+  bar.style.transition='none'; bar.style.width = pct+'%';
+  requestAnimationFrame(()=>{ bar.style.transition='width '+remain+'ms linear'; bar.style.width='100%'; });
+}
+function clearTimer(){ if(timer){ clearTimeout(timer); timer=null; } }
+function next(){ idx=(idx+1)%SLIDES.length; render(); }
+function go(dir){ clearTimer(); idx=(idx+dir+SLIDES.length)%SLIDES.length; render(); }
+function togglePlay(){
+  playing=!playing;
+  document.getElementById('playBtn').textContent = playing?'⏸':'▶';
+  if(playing){ schedule(); }
+  else { clearTimer(); const bar=document.getElementById('progressbar');
+    // figer la barre
+    const elapsed=Date.now()-tickStart; const total=(SLIDES[idx].dur||DUR.slide)*1000;
+    bar.style.transition='none'; bar.style.width=Math.min(100,(elapsed/total)*100)+'%';
+  }
+}
+function toggleFull(){ if(!document.fullscreenElement){ document.documentElement.requestFullscreen?.(); } else { document.exitFullscreen?.(); } }
+
+// Contrôles auto-masqués
+let hideT=null;
+function showControls(){
+  document.getElementById('controls').classList.remove('hidden');
+  document.getElementById('counter').classList.remove('hidden');
+  clearTimeout(hideT);
+  hideT=setTimeout(()=>{ document.getElementById('controls').classList.add('hidden'); document.getElementById('counter').classList.add('hidden'); }, 3000);
+}
+document.addEventListener('mousemove', showControls);
+document.addEventListener('touchstart', showControls);
+document.addEventListener('keydown', e=>{
+  if(e.key==='ArrowRight'){ go(1); showControls(); }
+  else if(e.key==='ArrowLeft'){ go(-1); showControls(); }
+  else if(e.key===' '){ e.preventDefault(); togglePlay(); showControls(); }
+  else if(e.key.toLowerCase()==='f'){ toggleFull(); }
+});
+
+function showError(msg){
+  document.getElementById('loader').style.display='none';
+  document.getElementById('errMsg').textContent = msg;
+  document.getElementById('errBox').style.display='flex';
+}
+
+load().catch(e=>{ console.error(e); showError('Erreur de chargement : '+(e?.message||e)); });
+</script>
+</body>
+</html>
