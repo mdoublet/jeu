@@ -183,6 +183,17 @@ async function load(){
     photos = photoRows.map(p=>({equipe:p.equipe_nom,challenge:p.challenge_num||1,statut:p.statut,points:p.points||0,data:p.data}));
     pbRows.forEach(r=>{ (pbByTeam[r.equipe_nom]=pbByTeam[r.equipe_nom]||{})[r.lettre]=r.ville_donnee; });
     detRows.forEach(r=>{ if(detail[r.jeu]) detail[r.jeu].push(r); });
+    // Fusionner le détail des étapes (mauvais mots-clés saisis) dans les scores par équipe
+    detail.etape.forEach(r=>{
+      const t=r.equipe_nom, nom=r.question_texte;
+      scoresByTeam[t]=scoresByTeam[t]||{etape:{},ep:{}};
+      const cur=scoresByTeam[t].etape[nom]||{pts:null,errors:0,found:false};
+      const wrong=(r.reponse_donnee||'').split(' · ').filter(Boolean);
+      cur.wrongList=wrong;
+      if(wrong.length) cur.errors=wrong.length;
+      if(r.correct) cur.found=true;
+      scoresByTeam[t].etape[nom]=cur;
+    });
   } else {
     const [scoreRows, photoRows, pbRows, detRows] = await Promise.all([
       q(db.from('scores_archive').select('*').eq('archive_label',LABEL)),
@@ -195,14 +206,14 @@ async function load(){
     const etDetail = {}; // team -> {nom:{errors,found}}
     detRows.forEach(r=>{
       if(detail[r.jeu]) detail[r.jeu].push(r);
-      if(r.jeu==='etape'){ (etDetail[r.equipe_nom]=etDetail[r.equipe_nom]||{})[r.question_texte]={errors:parseInt(r.reponse_donnee)||0,found:!!r.correct}; }
+      if(r.jeu==='etape'){ const w=(r.reponse_donnee||'').split(' · ').filter(Boolean); (etDetail[r.equipe_nom]=etDetail[r.equipe_nom]||{})[r.question_texte]={errors:w.length,found:!!r.correct,wrongList:w}; }
     });
     scoreRows.forEach(r=>{
       const t=r.equipe_nom; scoresByTeam[t]=scoresByTeam[t]||{etape:{},ep:{}};
       totals[t]=(totals[t]||0)+(r.score||0);
       if((r.epreuve_id||0)%2===0){
         const d=(etDetail[t]||{})[r.epreuve_titre]||{};
-        scoresByTeam[t].etape[r.epreuve_titre]={pts:r.score,errors:d.errors||0,found:d.found!==undefined?d.found:(r.score>0)};
+        scoresByTeam[t].etape[r.epreuve_titre]={pts:r.score,errors:d.errors||0,found:d.found!==undefined?d.found:(r.score>0),wrongList:d.wrongList||[]};
       } else {
         scoresByTeam[t].ep[r.epreuve_titre]=r.score;
       }
@@ -251,6 +262,7 @@ function buildSlides(m){
         <div class="tc-name">${esc(t)}<span class="tc-pts">${r.pts??0} pts</span></div>
         <div class="tc-line">${r.found?'✅ Mot-clé trouvé':'❌ Mot-clé non trouvé'}</div>
         <div class="tc-line">${r.errors>0?('✗ '+r.errors+' mauvaise'+(r.errors>1?'s':'')+' réponse'+(r.errors>1?'s':'')+' (−'+r.errors+' pt'+(r.errors>1?'s':'')+')'):'Aucune erreur'}</div>
+        ${(r.wrongList&&r.wrongList.length)?`<div class="tc-line" style="color:var(--danger);font-size:.92em">Proposé : ${r.wrongList.map(esc).join(' · ')}</div>`:''}
       </div>`;
     }).join('');
     SLIDES.push({ dur: DUR.slide, html: `<div class="slide">

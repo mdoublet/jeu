@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.21-15:32:51</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.21-15:54:16</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -963,6 +963,7 @@ function renderEtapeSchedule(sched, parcours) {
       if (phase2.phase === 'etape' && phase2.blocIdx === stepIdx && teamState.etape_status !== 'done') {
         if(teamState){teamState.indices_shown=6; teamState.score_etape=0; teamState.etape_status='done';}
         db.from('jp_team_states').update({indices_shown:6, score_etape:0, etape_status:'done'}).eq('equipe_nom',currentTeam);
+        if (isCaptain) logEtapeDetail(stepIdx, etape, {found:false}); // temps écoulé, mot-clé non trouvé
         renderTeamView();
       }
     });
@@ -1233,12 +1234,15 @@ async function validerMotcle() {
       errEl.innerHTML = `Mot-clé incorrect — <strong>−${ETAPE_PENALITE_ERREUR} pt</strong>. Score possible : <strong>${potentiel} pt${potentiel!==1?'s':''}</strong>.`;
       errEl.style.display = 'block';
     }
+    // Journaliser le mauvais mot-clé saisi (pour le diaporama / archives)
+    logEtapeDetail(stepIdx, etape, {addWrong: saisi, found:false});
     updateScoreBand(); // rafraîchir le bandeau sans effacer le message ni le focus
     return;
   }
 
   // ✓ Mot-clé correct
   motcleSaisi = '';
+  logEtapeDetail(stepIdx, etape, {found:true}); // marquer l'étape comme trouvée
   // Vérifier si le temps est encore valide
   const multV = gameState?.time_multiplier || 1;
   const HV = gameState?.started_at ? new Date(gameState.started_at).getTime() : Date.now();
@@ -1813,6 +1817,10 @@ async function repQCM(rep) {
   reponses[qIdx] = rep;
   await db.from('jp_team_states').update({reponse_epreuve:JSON.stringify(reponses)}).eq('equipe_nom',currentTeam);
   Object.assign(teamState, {reponse_epreuve:JSON.stringify(reponses)});
+  // Journaliser la réponse (quizz des mariés)
+  const anecTri = (appData.anecdotes||[]).slice().sort((a,b)=>(a.ordre||0)-(b.ordre||0));
+  const aQ = anecTri[qIdx];
+  if (aQ) logReponseDetail('maries', aQ.celui_qui, aQ.reponse, rep, rep===aQ.reponse);
   renderTeamView();
 }
 async function qcmSuivant() {
@@ -1932,6 +1940,8 @@ async function friseRepondre(nomChoisi) {
   if (epreuveF) saveScore('ep_'+schedF.blocIdx, calcScoreEpreuve(epreuveF, reponses));
   await db.from('jp_team_states').update({reponse_epreuve:JSON.stringify(reponses)}).eq('equipe_nom',currentTeam);
   Object.assign(teamState, {reponse_epreuve:JSON.stringify(reponses)});
+  // Journaliser la réponse (quizz des invités)
+  logReponseDetail('invites', j.anecdote, j.nom, nomChoisi, correct);
   renderTeamView();
 }
 
@@ -2058,6 +2068,45 @@ function clearAllTimers() {
 // Helpers scores_etapes (jsonb dict)
 function getParcours() {
   try { return JSON.parse(teamState?.parcours||'[]'); } catch(e) { return []; }
+}
+
+// ===================== JOURNAL DES RÉPONSES (pour le diaporama / archives) =====================
+// Chaque réponse est enregistrée en direct dans reponses_detail_archive (label __live__),
+// que le jeu soit rejoué par un GM ou (comme ici) par le capitaine sur son téléphone.
+async function logReponseDetail(jeu, question_texte, reponse_correcte, reponse_donnee, correct) {
+  if (gameState?.status !== 'active') return;
+  try {
+    await db.from('reponses_detail_archive').upsert({
+      archive_label:'__live__', jeu, equipe_nom:currentTeam,
+      question_texte:(question_texte||'?'),
+      reponse_correcte:(reponse_correcte||''),
+      reponse_donnee:(reponse_donnee||''),
+      correct:!!correct,
+      archived_at:new Date().toISOString()
+    }, {onConflict:'archive_label,jeu,equipe_nom,question_texte'});
+  } catch(e) { console.warn('logReponseDetail', e); }
+}
+// Étapes : une ligne par (étape, équipe) qui ACCUMULE les mauvais mots-clés saisis
+// (reponse_donnee = liste séparée par « · ») et note si le mot-clé a été trouvé (correct).
+async function logEtapeDetail(stepIdx, etape, opts) {
+  opts = opts || {};
+  if (gameState?.status !== 'active') return;
+  const nom = etape?.nom || ('Étape ' + (stepIdx + 1));
+  try {
+    const {data} = await db.from('reponses_detail_archive')
+      .select('reponse_donnee,correct')
+      .eq('archive_label','__live__').eq('jeu','etape')
+      .eq('equipe_nom',currentTeam).eq('question_texte',nom).maybeSingle();
+    const liste = (data?.reponse_donnee) ? data.reponse_donnee.split(' · ').filter(Boolean) : [];
+    if (opts.addWrong) liste.push(opts.addWrong);
+    const found = (opts.found !== undefined) ? opts.found : !!data?.correct;
+    await db.from('reponses_detail_archive').upsert({
+      archive_label:'__live__', jeu:'etape', equipe_nom:currentTeam,
+      question_texte:nom, reponse_correcte:(etape?.code||''),
+      reponse_donnee: liste.join(' · '), correct: found,
+      archived_at:new Date().toISOString()
+    }, {onConflict:'archive_label,jeu,equipe_nom,question_texte'});
+  } catch(e) { console.warn('logEtapeDetail', e); }
 }
 
 function getScores() {
