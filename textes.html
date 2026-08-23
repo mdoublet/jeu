@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caroline & Marc — Relecture des textes</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--cream:#EEF4F7;--warm-white:#F5F9FB;--gold:#1E6A7A;--gold-dark:#134D5A;--ink:#0D2B33;--ink-muted:#5A7D87;--border:#B8D0D8;--radius:12px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--ink);max-width:820px;margin:0 auto;padding:22px 16px;line-height:1.5}
+h1{font-family:'Playfair Display',serif;font-size:24px;color:var(--gold-dark);margin-bottom:6px}
+.sub{color:var(--ink-muted);font-size:14px;margin-bottom:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:24px;border:1px solid var(--gold-dark);background:var(--gold);color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn.secondary{background:transparent;color:var(--gold-dark)}
+.btn:disabled{opacity:.5}
+#out{background:var(--warm-white);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;white-space:pre-wrap;word-break:break-word;max-height:70vh;overflow:auto}
+#status{font-size:13px;color:var(--ink-muted)}
+</style>
+</head>
+<body>
+<h1>📝 Relecture des textes</h1>
+<div class="sub">Récupère tous les champs texte de la base (quizz mariés &amp; invités, étapes, épreuves, villes, équipes) pour relecture orthographique. Copiez le résultat et collez-le à Claude.</div>
+<div class="row">
+  <button class="btn" id="loadBtn" onclick="charger()">📥 Récupérer les textes</button>
+  <button class="btn secondary" id="copyBtn" onclick="copier()" disabled>📋 Tout copier</button>
+  <span id="status"></span>
+</div>
+<div id="out">—</div>
+
+<script>
+const SUPABASE_URL='https://ktpiwlcazmodfezrwlqf.supabase.co';
+const SUPABASE_KEY='sb_publishable_rcKC1bFMte1P2qW6OSdiTw_w4KoVfQl';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false, autoRefreshToken:false } });
+
+const out = document.getElementById('out');
+const statusEl = document.getElementById('status');
+function stripHtml(s){ return (s||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/(p|div|li)>/gi,'\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#39;|&rsquo;/g,'’').replace(/[ \t]+\n/g,'\n').trim(); }
+function clean(s){ return (s==null?'':String(s)).replace(/\r/g,'').trim(); }
+async function q(query){ const r=await query; if(r.error) throw r.error; return r.data||[]; }
+
+async function charger(){
+  const btn=document.getElementById('loadBtn'); btn.disabled=true; statusEl.textContent='Chargement…';
+  const L=[];
+  try{
+    const [anecdotes, joueurs, configRows, epreuves, villesRows, equipesRows] = await Promise.all([
+      q(db.from('anecdotes').select('*').order('ordre')),
+      q(db.from('joueurs').select('nom,equipe_nom,anecdote,commentaire').order('nom')),
+      q(db.from('jp_config').select('key,value')),
+      q(db.from('epreuves').select('id,title,type,instructions,scoring').order('id')),
+      q(db.from('villes_bac').select('lettre,ville').order('lettre')),
+      q(db.from('equipes').select('nom').order('id')),
+    ]);
+
+    // --- Quizz des mariés (anecdotes) ---
+    L.push('===== QUIZZ DES MARIÉS (table anecdotes) =====');
+    anecdotes.forEach((a,i)=>{
+      const ref='[maries #'+(a.id!=null?a.id:i)+']';
+      if(clean(a.celui_qui)) L.push(ref+' celui_qui: '+clean(a.celui_qui));
+      if(clean(a.reponse))   L.push(ref+' reponse: '+clean(a.reponse));
+      if(clean(a.commentaire))L.push(ref+' commentaire: '+clean(a.commentaire));
+    });
+
+    // --- Quizz des invités (joueurs) ---
+    L.push('\n===== QUIZZ DES INVITÉS (table joueurs) =====');
+    joueurs.forEach(j=>{
+      const ref='[joueur "'+clean(j.nom)+'"'+(j.equipe_nom?(' · '+clean(j.equipe_nom)):'')+']';
+      if(clean(j.anecdote))   L.push(ref+' anecdote: '+clean(j.anecdote));
+      if(clean(j.commentaire))L.push(ref+' commentaire: '+clean(j.commentaire));
+    });
+
+    // --- Étapes (jp_config.jdp_etapes) ---
+    L.push('\n===== ÉTAPES (jp_config.jdp_etapes) =====');
+    let etapes=[]; const cfg={}; configRows.forEach(r=>cfg[r.key]=r.value);
+    try{ etapes=JSON.parse(cfg['jdp_etapes']||'[]'); }catch(e){ L.push('(jdp_etapes illisible)'); }
+    etapes.forEach((e,i)=>{
+      const ref='[étape '+i+(e.nom?(' "'+clean(e.nom)+'"'):'')+']';
+      if(clean(e.nom))   L.push(ref+' nom: '+clean(e.nom));
+      if(clean(e.lieu))  L.push(ref+' lieu: '+clean(e.lieu));
+      if(clean(e.enigme))L.push(ref+' enigme: '+clean(e.enigme));
+      (e.indices||[]).forEach((ind,k)=>{ if(clean(ind)) L.push(ref+' indice '+(k+1)+': '+clean(ind)); });
+      if(clean(e.code))  L.push(ref+' mot-clé: '+clean(e.code));
+    });
+
+    // --- Épreuves ---
+    L.push('\n===== ÉPREUVES (table epreuves) =====');
+    epreuves.forEach(ep=>{
+      const ref='[épreuve #'+ep.id+(ep.title?(' "'+clean(ep.title)+'"'):'')+']';
+      if(clean(ep.title))   L.push(ref+' title: '+clean(ep.title));
+      if(clean(ep.scoring)) L.push(ref+' scoring: '+clean(ep.scoring));
+      const instr=stripHtml(ep.instructions);
+      if(instr) L.push(ref+' instructions: '+instr.replace(/\n/g,'\n    '));
+    });
+
+    // --- Villes ---
+    L.push('\n===== VILLES (table villes_bac) =====');
+    const byL={}; villesRows.forEach(r=>{ const l=(r.lettre||'').toUpperCase(); (byL[l]=byL[l]||[]).push(clean(r.ville)); });
+    Object.keys(byL).sort().forEach(l=>{ L.push('['+l+'] '+byL[l].join(', ')); });
+
+    // --- Équipes ---
+    L.push('\n===== ÉQUIPES (table equipes) =====');
+    equipesRows.forEach(e=>{ if(clean(e.nom)) L.push('- '+clean(e.nom)); });
+
+    out.textContent = L.join('\n');
+    document.getElementById('copyBtn').disabled=false;
+    statusEl.textContent = 'OK — '+L.length+' lignes. Cliquez « Tout copier » puis collez à Claude.';
+  }catch(e){
+    console.error(e);
+    out.textContent = '';
+    statusEl.textContent = 'Erreur : '+(e?.message||e);
+  }finally{ btn.disabled=false; }
+}
+
+async function copier(){
+  try{ await navigator.clipboard.writeText(out.textContent); statusEl.textContent='Copié ✓ — collez le contenu à Claude.'; }
+  catch(e){
+    // repli : sélectionner le texte
+    const r=document.createRange(); r.selectNodeContents(out);
+    const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    statusEl.textContent='Sélectionné — faites Ctrl/Cmd+C pour copier.';
+  }
+}
+</script>
+</body>
+</html>
