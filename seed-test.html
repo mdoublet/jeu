@@ -26,7 +26,7 @@ a.link{color:var(--gold-dark);font-weight:600}
 </head>
 <body>
 <h1>🧪 Générateur d'archive de test</h1>
-<div class="sub">Crée une archive « comme si » une partie à 4 équipes venait de se terminer, pour tester le diaporama. Réutilise les vraies images archivées et votre configuration (étapes, anecdotes, villes…).</div>
+<div class="sub">Crée une archive « comme si » une partie venait de se terminer, pour tester le diaporama. Utilise les équipes de votre configuration actuelle, réutilise les vraies images archivées et votre configuration (étapes, anecdotes, villes…).</div>
 
 <div class="card">
   <label>Nom de l'archive de test</label>
@@ -51,7 +51,7 @@ const SUPABASE_KEY='sb_publishable_rcKC1bFMte1P2qW6OSdiTw_w4KoVfQl';
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false, autoRefreshToken:false } });
 
-const TEAMS = ['Les Corsaires','Les Sirènes','Les Mouettes','Les Phares'];
+const FALLBACK_NAMES = ['Les Corsaires','Les Sirènes','Les Mouettes','Les Phares'];
 const FAKE_WRONG = ['Ancre','Boussole','Récif','Galion','Écume','Lagune','Corsaire','Marée'];
 const FAKE_CITY  = ['Trifouillis','Perpète','Nawakville','Zzzville','Bourg-Paumé'];
 const now = new Date().toISOString();
@@ -64,7 +64,7 @@ function sample(arr,n){ const c=[...arr]; const out=[]; while(out.length<n && c.
 function norm(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-_'’\s]+/g,' ').trim(); }
 async function q(query){ const r=await query; if(r.error) throw r.error; return r.data||[]; }
 
-document.getElementById('labelInput').value = '🧪 Partie test 4 équipes — ' + new Date().toLocaleString('fr-FR');
+document.getElementById('labelInput').value = '🧪 Partie test — ' + new Date().toLocaleString('fr-FR');
 
 async function insertBatched(table, rows, size){
   for(let i=0;i<rows.length;i+=size){
@@ -79,14 +79,19 @@ async function generer(){
   const label = document.getElementById('labelInput').value.trim() || ('Test '+now);
   try{
     log('Chargement de la configuration…');
-    const [configRows, epreuves, anecdotes, joueurs, villesRows] = await Promise.all([
+    const [configRows, epreuves, anecdotes, joueurs, villesRows, equipesRows] = await Promise.all([
       q(db.from('jp_config').select('key,value')),
       q(db.from('epreuves').select('*').order('id')),
       q(db.from('anecdotes').select('*').order('ordre')),
       q(db.from('joueurs').select('nom,equipe_nom,anecdote,commentaire')),
       q(db.from('villes_bac').select('lettre,ville')),
+      q(db.from('equipes').select('nom').order('id')),
     ]);
     const config={}; configRows.forEach(r=>config[r.key]=r.value);
+    // Noms d'équipes = configuration actuelle (repli sur des noms par défaut si aucune)
+    const teams = equipesRows.map(e=>e.nom).filter(Boolean);
+    if(!teams.length){ FALLBACK_NAMES.forEach(n=>teams.push(n)); log('⚠️ Aucune équipe configurée — utilisation de noms par défaut.','warn'); }
+    log('Équipes utilisées : '+teams.join(', '));
     let etapes=[]; try{ etapes=JSON.parse(config['jdp_etapes']||'[]'); }catch(e){}
     if(!etapes.length){ log('⚠️ Aucune étape configurée (jp_config.jdp_etapes) — le diaporama montrera surtout les quizz/photos.','warn'); }
 
@@ -98,13 +103,13 @@ async function generer(){
 
     const scoresArchive=[], detail=[];
     const doneEpreuves=new Set();
-    const photoScoreByTeam={}; TEAMS.forEach(t=>photoScoreByTeam[t]=null);
+    const photoScoreByTeam={}; teams.forEach(t=>photoScoreByTeam[t]=null);
 
     etapes.forEach((etape,i)=>{
       const nom = etape.nom || ('Étape '+(i+1));
       const epreuve = (etape.epreuveId!=null) ? epreuves.find(e=>String(e.id)===String(etape.epreuveId)) : null;
       // --- Étape (mot-clé) par équipe ---
-      TEAMS.forEach(team=>{
+      teams.forEach(team=>{
         const errors=rand(0,3);
         const found=Math.random()<0.8;
         const wrong=Array.from({length:errors},()=>pick(FAKE_WRONG));
@@ -115,7 +120,7 @@ async function generer(){
       // --- Épreuve associée (une seule fois par épreuve) ---
       if(epreuve && !doneEpreuves.has(epreuve.id)){
         doneEpreuves.add(epreuve.id);
-        TEAMS.forEach(team=>{
+        teams.forEach(team=>{
           let sc=0, hasScore=true;
           if(epreuve.type==='qcm'){
             anecdotes.forEach(a=>{ const given=pick(['Lui','Elle','Les 2']); const ok=(given===a.reponse); if(ok)sc++;
@@ -147,7 +152,7 @@ async function generer(){
     const photoEtapeIdx = etapes.findIndex(e=> photoEpreuve && String(e.epreuveId)===String(photoEpreuve.id));
     if(images.length){
       let k=0;
-      TEAMS.forEach(team=>{
+      teams.forEach(team=>{
         let teamPts=0;
         [1,2].forEach(ch=>{
           const validee = Math.random()<0.75;
@@ -164,7 +169,7 @@ async function generer(){
       });
       // Ligne de score pour l'épreuve photos (si elle est rattachée à une étape)
       if(photoEpreuve && photoEtapeIdx>=0){
-        TEAMS.forEach(team=>scoresArchive.push({equipe_nom:team,epreuve_id:photoEtapeIdx*2+1,epreuve_titre:(photoEpreuve.title||'Photos'),score:photoScoreByTeam[team]||0,archive_label:label,archived_at:now}));
+        teams.forEach(team=>scoresArchive.push({equipe_nom:team,epreuve_id:photoEtapeIdx*2+1,epreuve_titre:(photoEpreuve.title||'Photos'),score:photoScoreByTeam[team]||0,archive_label:label,archived_at:now}));
       }
       log(`${photoRows.length} photo(s) générée(s) à partir de ${images.length} image(s) réutilisée(s).`);
     } else {
@@ -179,7 +184,7 @@ async function generer(){
     if(photoRows.length){ log(`Écriture de ${photoRows.length} photo(s)…`); await insertBatched('photos_archive', photoRows, 3); }
 
     log('✅ Archive de test créée : « '+label+' »', 'ok');
-    log('Équipes : '+TEAMS.join(', '), 'ok');
+    log('Équipes : '+teams.join(', '), 'ok');
     const link=document.getElementById('diapoLink');
     link.href='diaporama.html?mode=archive&label='+encodeURIComponent(label);
     link.style.display='inline-flex';
