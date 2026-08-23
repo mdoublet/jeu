@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.23-16:38:47</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.23-16:43:43</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -1656,19 +1656,21 @@ function updateFriseLocal(i,f,v){getLocalQs()[i].contenu[f]=v;}
 function addFriseLocal(){if(!appData.questions[currentEpTab])appData.questions[currentEpTab]=[];const n=appData.questions[currentEpTab].length;appData.questions[currentEpTab].push({epreuve_id:currentEpTab,ordre:n,contenu:{evenement:'',annee:''}});renderEpEditor();}
 function removeFriseLocal(i){appData.questions[currentEpTab].splice(i,1);renderEpEditor();}
 async function saveVillesBacAndEpreuve(){
-  await saveEpreuve();
+  // l'épreuve est déjà enregistrée par saveEpDureeAndEpreuve
   await saveVillesBac();
   showSaveMsg('epSaveMsg');
 }
 async function saveEpreuve(){
   const ep=appData.epreuves.find(e=>e.id===currentEpTab);
-  ep.title=document.getElementById('epTitle').value||ep.title;
-  // Read from contenteditable div (innerHTML preserves formatting)
+  if(!ep) return;
+  // Lecture DOM null-safe : certains champs (scoring, max) ne sont pas rendus pour
+  // toutes les épreuves (photos/villes) → ne jamais planter sur un élément absent.
+  ep.title=document.getElementById('epTitle')?.value||ep.title;
   const instrEl=document.getElementById('epInstr');
-  ep.instructions=instrEl ? instrEl.innerHTML : '';
-  ep.scoring=document.getElementById('epScoring').value;
-  ep.max_score=parseInt(document.getElementById('epMax').value)||10;
-  ep.duree=parseInt(document.getElementById('epDuree').value)||600;
+  ep.instructions=instrEl ? instrEl.innerHTML : (ep.instructions||'');
+  ep.scoring=document.getElementById('epScoring')?.value ?? ep.scoring ?? '';
+  ep.max_score=parseInt(document.getElementById('epMax')?.value)||ep.max_score||10;
+  ep.duree=parseInt(document.getElementById('epDuree')?.value)||ep.duree||600;
   await db.from('epreuves').update({title:ep.title,instructions:ep.instructions,scoring:ep.scoring,max_score:ep.max_score,duree:ep.duree}).eq('id',ep.id);
   await db.from('questions').delete().eq('epreuve_id',ep.id);
   const qs=(appData.questions[ep.id]||[]).map((q,i)=>({epreuve_id:ep.id,ordre:i,contenu:q.contenu}));
@@ -2748,7 +2750,8 @@ function deleteAnecdote(i){
 }
 
 async function saveAnecdotesAndEpreuve(){
-  await saveEpreuve();
+  // (l'épreuve elle-même est déjà enregistrée par saveEpDureeAndEpreuve ; ne pas
+  //  rappeler saveEpreuve() qui lisait des champs DOM absents et faisait tout planter)
   // Supprimer toutes les anecdotes puis réinsérer, AVEC diagnostic (compteurs + erreurs).
   const del = await db.from('anecdotes').delete().neq('id',0).select('id');
   if(del.error){
