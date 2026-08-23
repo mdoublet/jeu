@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.21-15:54:16</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.23-15:32:28</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -2073,18 +2073,41 @@ function getParcours() {
 // ===================== JOURNAL DES RÉPONSES (pour le diaporama / archives) =====================
 // Chaque réponse est enregistrée en direct dans reponses_detail_archive (label __live__),
 // que le jeu soit rejoué par un GM ou (comme ici) par le capitaine sur son téléphone.
+let _detailErrShown = false;
+function detailWriteError(e) {
+  console.warn('Écriture réponse échouée:', e);
+  if (!_detailErrShown) {
+    _detailErrShown = true;
+    showToast({icon:'⚠️', title:'Réponses non enregistrées', msg:(e?.message||e||'erreur inconnue')+' — le diaporama pourrait être incomplet.', duration:12000});
+  }
+}
+// Écrit/actualise une ligne de détail SANS dépendre d'une contrainte ON CONFLICT :
+// on cherche la ligne (4 clés), puis UPDATE si elle existe, sinon INSERT.
+async function writeDetailRow(row) {
+  const sel = await db.from('reponses_detail_archive').select('id')
+    .eq('archive_label',row.archive_label).eq('jeu',row.jeu)
+    .eq('equipe_nom',row.equipe_nom).eq('question_texte',row.question_texte).maybeSingle();
+  if (sel.error) throw sel.error;
+  if (sel.data?.id) {
+    const r = await db.from('reponses_detail_archive').update(row).eq('id', sel.data.id);
+    if (r.error) throw r.error;
+  } else {
+    const r = await db.from('reponses_detail_archive').insert(row);
+    if (r.error) throw r.error;
+  }
+}
 async function logReponseDetail(jeu, question_texte, reponse_correcte, reponse_donnee, correct) {
   if (gameState?.status !== 'active') return;
   try {
-    await db.from('reponses_detail_archive').upsert({
+    await writeDetailRow({
       archive_label:'__live__', jeu, equipe_nom:currentTeam,
       question_texte:(question_texte||'?'),
       reponse_correcte:(reponse_correcte||''),
       reponse_donnee:(reponse_donnee||''),
       correct:!!correct,
       archived_at:new Date().toISOString()
-    }, {onConflict:'archive_label,jeu,equipe_nom,question_texte'});
-  } catch(e) { console.warn('logReponseDetail', e); }
+    });
+  } catch(e) { detailWriteError(e); }
 }
 // Étapes : une ligne par (étape, équipe) qui ACCUMULE les mauvais mots-clés saisis
 // (reponse_donnee = liste séparée par « · ») et note si le mot-clé a été trouvé (correct).
@@ -2093,20 +2116,21 @@ async function logEtapeDetail(stepIdx, etape, opts) {
   if (gameState?.status !== 'active') return;
   const nom = etape?.nom || ('Étape ' + (stepIdx + 1));
   try {
-    const {data} = await db.from('reponses_detail_archive')
+    const sel = await db.from('reponses_detail_archive')
       .select('reponse_donnee,correct')
       .eq('archive_label','__live__').eq('jeu','etape')
       .eq('equipe_nom',currentTeam).eq('question_texte',nom).maybeSingle();
-    const liste = (data?.reponse_donnee) ? data.reponse_donnee.split(' · ').filter(Boolean) : [];
+    if (sel.error) throw sel.error;
+    const liste = (sel.data?.reponse_donnee) ? sel.data.reponse_donnee.split(' · ').filter(Boolean) : [];
     if (opts.addWrong) liste.push(opts.addWrong);
-    const found = (opts.found !== undefined) ? opts.found : !!data?.correct;
-    await db.from('reponses_detail_archive').upsert({
+    const found = (opts.found !== undefined) ? opts.found : !!sel.data?.correct;
+    await writeDetailRow({
       archive_label:'__live__', jeu:'etape', equipe_nom:currentTeam,
       question_texte:nom, reponse_correcte:(etape?.code||''),
       reponse_donnee: liste.join(' · '), correct: found,
       archived_at:new Date().toISOString()
-    }, {onConflict:'archive_label,jeu,equipe_nom,question_texte'});
-  } catch(e) { console.warn('logEtapeDetail', e); }
+    });
+  } catch(e) { detailWriteError(e); }
 }
 
 function getScores() {

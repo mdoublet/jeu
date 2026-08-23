@@ -146,8 +146,9 @@ async function load(){
   let etapes = [];
   try { etapes = JSON.parse(config['jdp_etapes']||'[]'); } catch(e) {}
 
-  const villes = {}; // lettre -> [villes normalisées]
-  villesBac.forEach(r => { const l=(r.lettre||'').toUpperCase(); (villes[l]=villes[l]||[]).push(norm(r.ville)); });
+  const villes = {};    // lettre -> [villes normalisées] (pour comparer)
+  const villesAff = {}; // lettre -> [villes libellé d'origine] (pour afficher)
+  villesBac.forEach(r => { const l=(r.lettre||'').toUpperCase(); (villes[l]=villes[l]||[]).push(norm(r.ville)); (villesAff[l]=villesAff[l]||[]).push(r.ville); });
 
   let teams = equipes.map(e => e.nom);
 
@@ -223,7 +224,7 @@ async function load(){
   }
 
   teams = teams.filter(Boolean);
-  const model = { teams, etapes, epreuves, anecdotes, joueurs, villes, scoresByTeam, photos, detail, pbByTeam, totals };
+  const model = { teams, etapes, epreuves, anecdotes, joueurs, villes, villesAff, scoresByTeam, photos, detail, pbByTeam, totals };
   buildSlides(model);
 
   if (!SLIDES.length) { showError("Aucune donnée à afficher pour ce diaporama."); return; }
@@ -327,27 +328,35 @@ function buildSlides(m){
     </div>`});
   }
 
-  // 4) PETIT BAC DES VILLES (si des réponses existent) — tableau condensé
+  // 4) PETIT BAC DES VILLES (paginé) — réponses possibles par lettre + résultats par équipe
   if (Object.keys(m.pbByTeam).length){
     const letters = [...new Set(Object.values(m.pbByTeam).flatMap(o=>Object.keys(o)))].sort();
     if (letters.length){
-      const head = `<th>Lettre</th>${m.teams.map(t=>`<th>${esc(t)}</th>`).join('')}`;
-      const body = letters.map(l=>{
-        const cells = m.teams.map(t=>{
-          const v=(m.pbByTeam[t]||{})[l];
-          const ok = v && (m.villes[l]||[]).includes(norm(v));
-          return `<td style="color:${v?(ok?'var(--success)':'var(--danger)'):'var(--ink-muted)'};font-weight:${ok?'600':'400'}">${esc(v||'—')}${v?(ok?' ✓':' ✗'):''}</td>`;
-        }).join('');
-        return `<tr><td>${esc(l)}</td>${cells}</tr>`;
-      }).join('');
-      const tot = m.teams.map(t=>{
+      const PER = 7;
+      const pages = Math.ceil(letters.length / PER);
+      const totals = m.teams.map(t=>{
         const o=m.pbByTeam[t]||{}; let n=0; Object.keys(o).forEach(l=>{ if(o[l]&&(m.villes[l]||[]).includes(norm(o[l]))) n++; }); return n;
       });
-      SLIDES.push({ dur: DUR.slide, html: `<div class="slide">
-        <div class="kicker"><span class="num">Villes</span> Le petit bac des villes</div>
-        <table class="recap-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody>
-        <tfoot><tr><td>Total</td>${tot.map(n=>`<td>${n}</td>`).join('')}</tr></tfoot></table>
-      </div>`});
+      for (let pg=0; pg<pages; pg++){
+        const chunk = letters.slice(pg*PER, (pg+1)*PER);
+        const head = `<th>Lettre</th><th style="text-align:left">Réponses possibles</th>${m.teams.map(t=>`<th>${esc(t)}</th>`).join('')}`;
+        const body = chunk.map(l=>{
+          const valides = (m.villesAff[l]||[]);
+          const cells = m.teams.map(t=>{
+            const v=(m.pbByTeam[t]||{})[l];
+            const ok = v && (m.villes[l]||[]).includes(norm(v));
+            return `<td style="color:${v?(ok?'var(--success)':'var(--danger)'):'var(--ink-muted)'};font-weight:${ok?'600':'400'}">${v?esc(v)+(ok?' ✓':' ✗'):'—'}</td>`;
+          }).join('');
+          return `<tr><td style="font-weight:700;color:var(--gold-dark)">${esc(l)}</td><td style="text-align:left;font-size:.86em;color:var(--ink-soft)">${valides.length?valides.map(esc).join(', '):'<em>—</em>'}</td>${cells}</tr>`;
+        }).join('');
+        SLIDES.push({ dur: DUR.slide, html: `<div class="slide">
+          <div class="kicker"><span class="num">Villes${pages>1?(' '+(pg+1)+'/'+pages):''}</span> Le petit bac des villes</div>
+          <div class="subtitle">Réponses possibles par lettre · ✓ / ✗ par équipe</div>
+          <div style="overflow-x:auto"><table class="recap-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody>
+          ${pg===pages-1?`<tfoot><tr><td>Total</td><td></td>${totals.map(n=>`<td>${n}</td>`).join('')}</tr></tfoot>`:''}
+          </table></div>
+        </div>`});
+      }
     }
   }
 
