@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.23-15:47:30</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.23-16:18:02</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -2728,6 +2728,7 @@ function renderAnecdotesEditor(){
 
 function addAnecdote(){
   appData.anecdotes.push({celui_qui:'',reponse:'Lui',commentaire:'',ordre:appData.anecdotes.length});
+  epDirty[currentEpTab]=true;
   document.getElementById('anecdotesEditor').innerHTML=renderAnecdotesEditor();
   // Scroll to the new card
   const newIdx=appData.anecdotes.length-1;
@@ -2739,9 +2740,10 @@ function addAnecdote(){
     if(input) setTimeout(()=>input.focus(),100);
   }
 }
-function updateAnecdote(i,field,val){ appData.anecdotes[i][field]=val; }
+function updateAnecdote(i,field,val){ appData.anecdotes[i][field]=val; epDirty[currentEpTab]=true; }
 function deleteAnecdote(i){
   appData.anecdotes.splice(i,1);
+  epDirty[currentEpTab]=true;
   document.getElementById('anecdotesEditor').innerHTML=renderAnecdotesEditor();
 }
 
@@ -3922,10 +3924,10 @@ async function saveEpDureeAndEpreuve(epId, epType) {
   // Reset dirty
   epDirty[epId] = false;
   delete epEdits[epId];
-  if (epType==='photos') savePhotosAndEpreuve();
-  else if (epType==='villes') saveVillesBacAndEpreuve();
-  else if (epType==='qcm') saveAnecdotesAndEpreuve();
-  else saveEpreuve();
+  if (epType==='photos') await savePhotosAndEpreuve();
+  else if (epType==='villes') await saveVillesBacAndEpreuve();
+  else if (epType==='qcm') await saveAnecdotesAndEpreuve();
+  else await saveEpreuve();
 }
 
 async function saveJdpEpreuve(epId) {
