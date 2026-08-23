@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.23-16:18:02</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.23-16:38:47</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -2749,14 +2749,27 @@ function deleteAnecdote(i){
 
 async function saveAnecdotesAndEpreuve(){
   await saveEpreuve();
-  // Delete all and re-insert
-  await db.from('anecdotes').delete().neq('id',0);
+  // Supprimer toutes les anecdotes puis réinsérer, AVEC diagnostic (compteurs + erreurs).
+  const del = await db.from('anecdotes').delete().neq('id',0).select('id');
+  if(del.error){
+    showToast({icon:'⚠️',title:'Suppression des anecdotes refusée',msg:del.error.message+' — vérifiez les règles (RLS) de la table anecdotes.',type:'danger',duration:14000});
+    return;
+  }
   const rows=appData.anecdotes
-    .filter(a=>a.celui_qui.trim())
+    .filter(a=>(a.celui_qui||'').trim())
     .map((a,i)=>({celui_qui:a.celui_qui,reponse:a.reponse,commentaire:a.commentaire||'',ordre:i}));
-  if(rows.length) await db.from('anecdotes').insert(rows);
+  let inserted=0;
+  if(rows.length){
+    const ins = await db.from('anecdotes').insert(rows).select('id');
+    if(ins.error){
+      showToast({icon:'⚠️',title:'Enregistrement des anecdotes refusé',msg:ins.error.message+' — vérifiez les règles (RLS) de la table anecdotes.',type:'danger',duration:14000});
+      return;
+    }
+    inserted=(ins.data||[]).length;
+  }
+  const removed=(del.data||[]).length;
   showSaveMsg('epSaveMsg');
-  showToast({icon:'✅',title:`${rows.length} anecdote${rows.length>1?'s':''} sauvegardée${rows.length>1?'s':''}`,duration:3000});
+  showToast({icon:'✅',title:`Anecdotes enregistrées`,msg:`${removed} supprimée(s) · ${inserted} réécrite(s)`,duration:6000});
 }
 async function renderAdminArchive(){
   const el=document.getElementById('adminArchiveContent');
