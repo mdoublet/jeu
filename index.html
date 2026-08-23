@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.23-15:32:28</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.23-15:47:30</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -1754,6 +1754,9 @@ async function pbSaisir(lettre, valeur) {
   if (epreuvePb) saveScore('ep_'+schedPb.blocIdx, calcScoreEpreuve(epreuvePb, reponses));
   await db.from('jp_team_states').update({reponse_epreuve: JSON.stringify(reponses)}).eq('equipe_nom', currentTeam);
   Object.assign(teamState, {reponse_epreuve: JSON.stringify(reponses)});
+  // Journaliser la réponse (petit bac des villes) : 1 ligne par (lettre, équipe)
+  const valides = (appData.villesBac[lettre]||[]).join(', ');
+  logReponseDetail('villes', lettre, valides, valeur.trim(), !!reponses[lettre+'_correct']);
   renderTeamView();
 }
 

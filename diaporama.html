@@ -155,7 +155,7 @@ async function load(){
   // Données de partie selon le mode
   let scoresByTeam = {};       // team -> { etape:{nom:{pts,errors,found}}, ep:{titre:pts} }
   let photos = [];             // {equipe, challenge, statut, points, data}
-  let detail = { maries:[], invites:[], etape:[] }; // rows reponses_detail
+  let detail = { maries:[], invites:[], etape:[], villes:[] }; // rows reponses_detail
   let pbByTeam = {};           // team -> {lettre: ville}
   let totals = {};             // team -> total
 
@@ -329,34 +329,49 @@ function buildSlides(m){
   }
 
   // 4) PETIT BAC DES VILLES (paginé) — réponses possibles par lettre + résultats par équipe
-  if (Object.keys(m.pbByTeam).length){
-    const letters = [...new Set(Object.values(m.pbByTeam).flatMap(o=>Object.keys(o)))].sort();
-    if (letters.length){
-      const PER = 7;
-      const pages = Math.ceil(letters.length / PER);
-      const totals = m.teams.map(t=>{
-        const o=m.pbByTeam[t]||{}; let n=0; Object.keys(o).forEach(l=>{ if(o[l]&&(m.villes[l]||[]).includes(norm(o[l]))) n++; }); return n;
+  // Source prioritaire : les réponses capturées en direct (jeu='villes') ; repli sur
+  // l'ancienne table petit_bac + config des villes.
+  let pb = null;
+  if (m.detail.villes && m.detail.villes.length){
+    const valides={}, ans={}, lettersSet=new Set();
+    m.detail.villes.forEach(r=>{
+      const l=r.question_texte; if(!l) return; lettersSet.add(l);
+      if (valides[l]===undefined) valides[l]=String(r.reponse_correcte||'').split(/\s*,\s*/).filter(Boolean);
+      (ans[r.equipe_nom]=ans[r.equipe_nom]||{})[l]={given:(r.reponse_donnee||''), ok:!!r.correct};
+    });
+    pb={letters:[...lettersSet].sort(), valides, ans};
+  } else if (Object.keys(m.pbByTeam).length){
+    const valides={}, ans={}, lettersSet=new Set();
+    Object.entries(m.pbByTeam).forEach(([t,o])=>{
+      Object.entries(o).forEach(([l,v])=>{
+        lettersSet.add(l); valides[l]=m.villesAff[l]||[];
+        (ans[t]=ans[t]||{})[l]={given:(v||''), ok:!!(v&&(m.villes[l]||[]).includes(norm(v)))};
       });
-      for (let pg=0; pg<pages; pg++){
-        const chunk = letters.slice(pg*PER, (pg+1)*PER);
-        const head = `<th>Lettre</th><th style="text-align:left">Réponses possibles</th>${m.teams.map(t=>`<th>${esc(t)}</th>`).join('')}`;
-        const body = chunk.map(l=>{
-          const valides = (m.villesAff[l]||[]);
-          const cells = m.teams.map(t=>{
-            const v=(m.pbByTeam[t]||{})[l];
-            const ok = v && (m.villes[l]||[]).includes(norm(v));
-            return `<td style="color:${v?(ok?'var(--success)':'var(--danger)'):'var(--ink-muted)'};font-weight:${ok?'600':'400'}">${v?esc(v)+(ok?' ✓':' ✗'):'—'}</td>`;
-          }).join('');
-          return `<tr><td style="font-weight:700;color:var(--gold-dark)">${esc(l)}</td><td style="text-align:left;font-size:.86em;color:var(--ink-soft)">${valides.length?valides.map(esc).join(', '):'<em>—</em>'}</td>${cells}</tr>`;
+    });
+    pb={letters:[...lettersSet].sort(), valides, ans};
+  }
+  if (pb && pb.letters.length){
+    const totals = m.teams.map(t=>{ const a=pb.ans[t]||{}; return Object.values(a).filter(x=>x.ok).length; });
+    const PER = 7, pages = Math.ceil(pb.letters.length / PER);
+    for (let pg=0; pg<pages; pg++){
+      const chunk = pb.letters.slice(pg*PER, (pg+1)*PER);
+      const head = `<th>Lettre</th><th style="text-align:left">Réponses possibles</th>${m.teams.map(t=>`<th>${esc(t)}</th>`).join('')}`;
+      const body = chunk.map(l=>{
+        const valides = pb.valides[l]||[];
+        const cells = m.teams.map(t=>{
+          const a=(pb.ans[t]||{})[l];
+          if(!a||!a.given) return `<td style="color:var(--ink-muted)">—</td>`;
+          return `<td style="color:${a.ok?'var(--success)':'var(--danger)'};font-weight:${a.ok?'600':'400'}">${esc(a.given)} ${a.ok?'✓':'✗'}</td>`;
         }).join('');
-        SLIDES.push({ dur: DUR.slide, html: `<div class="slide">
-          <div class="kicker"><span class="num">Villes${pages>1?(' '+(pg+1)+'/'+pages):''}</span> Le petit bac des villes</div>
-          <div class="subtitle">Réponses possibles par lettre · ✓ / ✗ par équipe</div>
-          <div style="overflow-x:auto"><table class="recap-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody>
-          ${pg===pages-1?`<tfoot><tr><td>Total</td><td></td>${totals.map(n=>`<td>${n}</td>`).join('')}</tr></tfoot>`:''}
-          </table></div>
-        </div>`});
-      }
+        return `<tr><td style="font-weight:700;color:var(--gold-dark)">${esc(l)}</td><td style="text-align:left;font-size:.86em;color:var(--ink-soft)">${valides.length?valides.map(esc).join(', '):'<em>—</em>'}</td>${cells}</tr>`;
+      }).join('');
+      SLIDES.push({ dur: DUR.slide, html: `<div class="slide">
+        <div class="kicker"><span class="num">Villes${pages>1?(' '+(pg+1)+'/'+pages):''}</span> Le petit bac des villes</div>
+        <div class="subtitle">Réponses possibles par lettre · ✓ / ✗ par équipe</div>
+        <div style="overflow-x:auto"><table class="recap-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody>
+        ${pg===pages-1?`<tfoot><tr><td>Total</td><td></td>${totals.map(n=>`<td>${n}</td>`).join('')}</tr></tfoot>`:''}
+        </table></div>
+      </div>`});
     }
   }
 
