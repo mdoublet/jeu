@@ -166,7 +166,7 @@ async function load(){
       q(db.from('petit_bac_reponses').select('equipe_nom,lettre,ville_donnee')),
       q(db.from('reponses_detail_archive').select('*').eq('archive_label','__live__')),
     ]);
-    if (!teams.length) teams = [...new Set(tsRows.map(t=>t.equipe_nom))];
+    tsRows.forEach(t=>{ if(t.equipe_nom && !teams.includes(t.equipe_nom)) teams.push(t.equipe_nom); });
     tsRows.forEach(ts => {
       const sc = parseScores(ts.scores_etapes);
       let parc = []; try { parc = JSON.parse(ts.parcours||'[]'); } catch(e) {}
@@ -202,7 +202,13 @@ async function load(){
       q(db.from('petit_bac_archive').select('*').eq('archive_label',LABEL)),
       q(db.from('reponses_detail_archive').select('*').eq('archive_label',LABEL)),
     ]);
-    if (!teams.length) teams = [...new Set(scoreRows.map(s=>s.equipe_nom))];
+    // En mode archive, les équipes affichées sont celles présentes dans l'archive
+    // (snapshot historique), pas la config actuelle.
+    const dataTeams = [];
+    [scoreRows, detRows, photoRows, pbRows].forEach(arr => (arr||[]).forEach(r => {
+      const n = r.equipe_nom; if (n && !dataTeams.includes(n)) dataTeams.push(n);
+    }));
+    if (dataTeams.length) teams = dataTeams;
     // scores_archive : epreuve_id pair = étape (titre = nom), impair = épreuve
     const etDetail = {}; // team -> {nom:{errors,found}}
     detRows.forEach(r=>{

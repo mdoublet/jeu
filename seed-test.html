@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caroline & Marc — Générateur d'archive de test</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--cream:#EEF4F7;--warm-white:#F5F9FB;--gold:#1E6A7A;--gold-dark:#134D5A;--gold-light:#C8DFE5;--ink:#0D2B33;--ink-muted:#5A7D87;--border:#B8D0D8;--success:#1E7A45;--danger:#A32020;--radius:12px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--ink);max-width:720px;margin:0 auto;padding:24px 18px;line-height:1.5}
+h1{font-family:'Playfair Display',serif;font-size:26px;color:var(--gold-dark);margin-bottom:6px}
+.sub{color:var(--ink-muted);font-size:14px;margin-bottom:20px}
+.card{background:var(--warm-white);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:24px;border:1px solid var(--gold-dark);background:var(--gold);color:#fff;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.secondary{background:transparent;color:var(--gold-dark)}
+label{font-size:13px;color:var(--ink-muted);display:block;margin-bottom:4px}
+input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--cream);font-size:14px;font-family:inherit}
+#log{background:#0d3843;color:#cfe8ee;border-radius:10px;padding:14px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;white-space:pre-wrap;max-height:340px;overflow:auto;margin-top:14px;display:none}
+.ok{color:#8fe0a6}.err{color:#ff9a9a}.warn{color:#ffd27a}
+a.link{color:var(--gold-dark);font-weight:600}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+</style>
+</head>
+<body>
+<h1>🧪 Générateur d'archive de test</h1>
+<div class="sub">Crée une archive « comme si » une partie à 4 équipes venait de se terminer, pour tester le diaporama. Réutilise les vraies images archivées et votre configuration (étapes, anecdotes, villes…).</div>
+
+<div class="card">
+  <label>Nom de l'archive de test</label>
+  <input id="labelInput" value="">
+  <div class="row">
+    <button class="btn" id="genBtn" onclick="generer()">✨ Générer l'archive de test</button>
+    <a class="btn secondary" id="diapoLink" style="display:none" target="_blank">📽️ Ouvrir le diaporama</a>
+  </div>
+  <div id="log"></div>
+</div>
+
+<div class="card" style="font-size:13px;color:var(--ink-muted)">
+  <strong>Notes</strong><br>
+  • Les données sont écrites sous un <em>nouveau libellé d'archive</em> — vos vraies archives ne sont pas touchées.<br>
+  • Pour supprimer cette archive de test ensuite : onglet <em>Archives → Supprimer les archives</em> (attention, cela efface toutes les archives), ou supprimez les lignes portant ce libellé dans Supabase.<br>
+  • Les images sont copiées depuis des photos déjà archivées (ou, à défaut, les photos en cours).
+</div>
+
+<script>
+const SUPABASE_URL='https://ktpiwlcazmodfezrwlqf.supabase.co';
+const SUPABASE_KEY='sb_publishable_rcKC1bFMte1P2qW6OSdiTw_w4KoVfQl';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false, autoRefreshToken:false } });
+
+const TEAMS = ['Les Corsaires','Les Sirènes','Les Mouettes','Les Phares'];
+const FAKE_WRONG = ['Ancre','Boussole','Récif','Galion','Écume','Lagune','Corsaire','Marée'];
+const FAKE_CITY  = ['Trifouillis','Perpète','Nawakville','Zzzville','Bourg-Paumé'];
+const now = new Date().toISOString();
+
+const logEl = document.getElementById('log');
+function log(msg, cls){ logEl.style.display='block'; const s=document.createElement('div'); if(cls)s.className=cls; s.textContent=msg; logEl.appendChild(s); logEl.scrollTop=logEl.scrollHeight; }
+function rand(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function sample(arr,n){ const c=[...arr]; const out=[]; while(out.length<n && c.length){ out.push(c.splice(Math.floor(Math.random()*c.length),1)[0]); } return out; }
+function norm(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-_'’\s]+/g,' ').trim(); }
+async function q(query){ const r=await query; if(r.error) throw r.error; return r.data||[]; }
+
+document.getElementById('labelInput').value = '🧪 Partie test 4 équipes — ' + new Date().toLocaleString('fr-FR');
+
+async function insertBatched(table, rows, size){
+  for(let i=0;i<rows.length;i+=size){
+    const { error } = await db.from(table).insert(rows.slice(i,i+size));
+    if(error) throw error;
+  }
+}
+
+async function generer(){
+  const btn=document.getElementById('genBtn'); btn.disabled=true;
+  logEl.innerHTML=''; logEl.style.display='block';
+  const label = document.getElementById('labelInput').value.trim() || ('Test '+now);
+  try{
+    log('Chargement de la configuration…');
+    const [configRows, epreuves, anecdotes, joueurs, villesRows] = await Promise.all([
+      q(db.from('jp_config').select('key,value')),
+      q(db.from('epreuves').select('*').order('id')),
+      q(db.from('anecdotes').select('*').order('ordre')),
+      q(db.from('joueurs').select('nom,equipe_nom,anecdote,commentaire')),
+      q(db.from('villes_bac').select('lettre,ville')),
+    ]);
+    const config={}; configRows.forEach(r=>config[r.key]=r.value);
+    let etapes=[]; try{ etapes=JSON.parse(config['jdp_etapes']||'[]'); }catch(e){}
+    if(!etapes.length){ log('⚠️ Aucune étape configurée (jp_config.jdp_etapes) — le diaporama montrera surtout les quizz/photos.','warn'); }
+
+    const villes={}; villesRows.forEach(r=>{ const l=(r.lettre||'').toUpperCase(); (villes[l]=villes[l]||[]).push(r.ville); });
+    const letters=Object.keys(villes).filter(l=>villes[l].length).sort();
+    const joueursAnec=joueurs.filter(j=>(j.anecdote||'').trim());
+
+    log(`Config : ${etapes.length} étape(s), ${epreuves.length} épreuve(s), ${anecdotes.length} anecdote(s) mariés, ${joueursAnec.length} anecdote(s) invités, ${letters.length} lettre(s) de villes.`);
+
+    const scoresArchive=[], detail=[];
+    const doneEpreuves=new Set();
+    const photoScoreByTeam={}; TEAMS.forEach(t=>photoScoreByTeam[t]=null);
+
+    etapes.forEach((etape,i)=>{
+      const nom = etape.nom || ('Étape '+(i+1));
+      const epreuve = (etape.epreuveId!=null) ? epreuves.find(e=>String(e.id)===String(etape.epreuveId)) : null;
+      // --- Étape (mot-clé) par équipe ---
+      TEAMS.forEach(team=>{
+        const errors=rand(0,3);
+        const found=Math.random()<0.8;
+        const wrong=Array.from({length:errors},()=>pick(FAKE_WRONG));
+        const pts=found?Math.max(0,10-errors):0;
+        scoresArchive.push({equipe_nom:team,epreuve_id:i*2,epreuve_titre:nom,score:pts,archive_label:label,archived_at:now});
+        detail.push({archive_label:label,jeu:'etape',equipe_nom:team,question_texte:nom,reponse_correcte:(etape.code||''),reponse_donnee:wrong.join(' · '),correct:found,archived_at:now});
+      });
+      // --- Épreuve associée (une seule fois par épreuve) ---
+      if(epreuve && !doneEpreuves.has(epreuve.id)){
+        doneEpreuves.add(epreuve.id);
+        TEAMS.forEach(team=>{
+          let sc=0, hasScore=true;
+          if(epreuve.type==='qcm'){
+            anecdotes.forEach(a=>{ const given=pick(['Lui','Elle','Les 2']); const ok=(given===a.reponse); if(ok)sc++;
+              detail.push({archive_label:label,jeu:'maries',equipe_nom:team,question_texte:(a.celui_qui||'?'),reponse_correcte:(a.reponse||''),reponse_donnee:given,correct:ok,archived_at:now}); });
+          } else if(epreuve.type==='frise'){
+            const mine=sample(joueursAnec, Math.min(joueursAnec.length, rand(3,5)));
+            mine.forEach(j=>{ const ok=Math.random()<0.6; const given= ok? j.nom : (pick(joueursAnec)?.nom||j.nom); if(ok)sc++;
+              detail.push({archive_label:label,jeu:'invites',equipe_nom:team,question_texte:(j.anecdote||'?'),reponse_correcte:(j.nom||''),reponse_donnee:given,correct:ok,archived_at:now}); });
+          } else if(epreuve.type==='villes'){
+            letters.forEach(l=>{ const valid=villes[l]||[]; let ans; const roll=Math.random();
+              if(roll<0.6 && valid.length) ans=pick(valid); else if(roll<0.85) ans=pick(FAKE_CITY); else ans='';
+              const ok=!!(ans && valid.map(norm).includes(norm(ans))); if(ok)sc++;
+              detail.push({archive_label:label,jeu:'villes',equipe_nom:team,question_texte:l,reponse_correcte:valid.join(', '),reponse_donnee:ans,correct:ok,archived_at:now}); });
+          } else if(epreuve.type==='photos'){
+            hasScore=false; // le score photos est calculé depuis les photos plus bas
+          }
+          if(hasScore) scoresArchive.push({equipe_nom:team,epreuve_id:i*2+1,epreuve_titre:(epreuve.title||'Épreuve'),score:sc,archive_label:label,archived_at:now});
+        });
+      }
+    });
+
+    // --- Photos : réutiliser des images déjà archivées ---
+    log('Récupération d\'images existantes à réutiliser…');
+    let pool = await q(db.from('photos_archive').select('data').not('data','is',null).limit(24));
+    if(!pool.length){ pool = await q(db.from('photos').select('data').not('data','is',null).limit(24)); }
+    const images = pool.map(p=>p.data).filter(Boolean);
+    const photoRows=[];
+    const photoEpreuve = epreuves.find(e=>e.type==='photos');
+    const photoEtapeIdx = etapes.findIndex(e=> photoEpreuve && String(e.epreuveId)===String(photoEpreuve.id));
+    if(images.length){
+      let k=0;
+      TEAMS.forEach(team=>{
+        let teamPts=0;
+        [1,2].forEach(ch=>{
+          const validee = Math.random()<0.75;
+          const pts = validee ? pick([10,8,6]) : 0;
+          teamPts += pts;
+          photoRows.push({
+            equipe_nom:team, epreuve_id:(photoEpreuve?.id||1), challenge_num:ch, attempt_num:1,
+            data: images[k%images.length], statut: validee?'validee':'refusee', points:pts,
+            archive_label:label, archived_at:now, created_at:now
+          });
+          k++;
+        });
+        photoScoreByTeam[team]=teamPts;
+      });
+      // Ligne de score pour l'épreuve photos (si elle est rattachée à une étape)
+      if(photoEpreuve && photoEtapeIdx>=0){
+        TEAMS.forEach(team=>scoresArchive.push({equipe_nom:team,epreuve_id:photoEtapeIdx*2+1,epreuve_titre:(photoEpreuve.title||'Photos'),score:photoScoreByTeam[team]||0,archive_label:label,archived_at:now}));
+      }
+      log(`${photoRows.length} photo(s) générée(s) à partir de ${images.length} image(s) réutilisée(s).`);
+    } else {
+      log('⚠️ Aucune image archivée trouvée à réutiliser — le diaporama n\'aura pas de slides photo.','warn');
+    }
+
+    // --- Écriture ---
+    log(`Écriture de ${scoresArchive.length} score(s)…`);
+    await insertBatched('scores_archive', scoresArchive, 200);
+    log(`Écriture de ${detail.length} réponse(s) détaillée(s)…`);
+    await insertBatched('reponses_detail_archive', detail, 200);
+    if(photoRows.length){ log(`Écriture de ${photoRows.length} photo(s)…`); await insertBatched('photos_archive', photoRows, 3); }
+
+    log('✅ Archive de test créée : « '+label+' »', 'ok');
+    log('Équipes : '+TEAMS.join(', '), 'ok');
+    const link=document.getElementById('diapoLink');
+    link.href='diaporama.html?mode=archive&label='+encodeURIComponent(label);
+    link.style.display='inline-flex';
+    log('→ Clique « Ouvrir le diaporama » ci-dessus, ou va dans Admin → Archives → 📽️ Diaporama.', 'ok');
+  }catch(e){
+    console.error(e);
+    log('❌ Erreur : '+(e?.message||e), 'err');
+    log('Astuce : si le message parle de « row-level security » ou « check constraint », c\'est une règle Supabase à ajuster (dis-le moi).', 'warn');
+  }finally{
+    btn.disabled=false;
+  }
+}
+</script>
+</body>
+</html>
