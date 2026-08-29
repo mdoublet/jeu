@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.29-22:27:28</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.29-22:51:27</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -857,6 +857,7 @@ function renderMarcheSchedule(sched, parcours) {
     `<div class="enigme-card" style="margin-bottom:10px">
       <div class="enigme-text">${(etape.enigme||'').replace(/\n/g,'<br>')||'<em style="opacity:.4">—</em>'}</div>
     </div>`
+    + renderEtapeReglesBloc()
     + renderIndiceBlocs(etape, sched)
     + (isCaptain ? `<div class="card">
       <div class="card-title">🔑 Mot-clé trouvé ?</div>
@@ -909,6 +910,16 @@ function indicesAffichesNow(sched) {
 function motcleReveleNow(sched) {
   const r = etapeRemainingSecs(sched);
   return r !== Infinity && r <= ETAPE_ANSWER_LEAD;
+}
+// Bloc repliable des règles du jeu (communes à toutes les étapes), sous l'énigme.
+// Replié par défaut pour ne pas encombrer l'écran (indices + saisie du mot-clé).
+function renderEtapeReglesBloc() {
+  const regles = (appData.config?.['jdp_etape_regles']||'').trim();
+  if (!regles) return '';
+  return `<details style="margin-bottom:10px;background:var(--cream);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px">
+    <summary style="cursor:pointer;font-size:13px;font-weight:500;color:var(--gold-dark)">📜 Règles du jeu</summary>
+    <div style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin-top:8px">${regles.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+  </details>`;
 }
 // Rendu partagé des 6 blocs sous l'énigme : 5 indices + la réponse, chacun « invisible »
 // tant que non révélé, avec l'horaire d'apparition.
@@ -1048,6 +1059,7 @@ function renderEtapeSchedule(sched, parcours) {
     `<div class="enigme-card" style="margin-bottom:10px">
       <div class="enigme-text">${(etape.enigme||'').replace(/\n/g,'<br>')||'<em style="opacity:.4">—</em>'}</div>
     </div>
+    ${renderEtapeReglesBloc()}
     ${indicesHtml}
     ${galetHtml}`;
 }

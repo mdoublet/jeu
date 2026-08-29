@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.29-22:27:28</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.29-22:51:27</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -285,6 +285,12 @@ input[type=file]{display:none}
       </div>
       <p style="font-size:13px;color:var(--ink-muted);margin-bottom:12px">Chaque étape mène les joueurs à un lieu via une énigme et des indices. Elle est associée à une épreuve dans le parcours de chaque équipe.</p>
       <div id="etapesTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📜 Règles du jeu (communes à toutes les étapes)</div>
+      <p style="font-size:13px;color:var(--ink-muted);margin-bottom:10px">Ce texte s'affiche, repliable, sous l'énigme sur le téléphone des joueurs — identique pour chaque étape.</p>
+      <textarea id="etapeReglesInput" class="admin-textarea" placeholder="Ex : À chaque étape, rendez-vous au lieu indiqué par l'énigme, puis trouvez le mot-clé. Des indices apparaissent au fil du temps…" style="min-height:120px"></textarea>
+      <div style="margin-top:10px"><button class="btn btn-gold btn-sm" onclick="saveEtapeRegles()">💾 Enregistrer les règles</button><span class="save-msg" id="etapeReglesSaveMsg">Sauvegardé ✓</span></div>
     </div>
     <div id="etapeEditor"></div>
   </div>
@@ -3749,6 +3755,20 @@ function renderEtapeTabsOnly() {
 function renderEtapesTabs() {
   renderEtapeTabsOnly();
   renderEtapeEditor();
+  loadEtapeRegles();
+}
+async function loadEtapeRegles() {
+  try {
+    const {data} = await db.from('jp_config').select('value').eq('key','jdp_etape_regles').maybeSingle();
+    const el = document.getElementById('etapeReglesInput');
+    if (el) el.value = data?.value || '';
+  } catch(e) {}
+}
+async function saveEtapeRegles() {
+  const val = document.getElementById('etapeReglesInput')?.value || '';
+  await db.from('jp_config').upsert({key:'jdp_etape_regles', value:val},{onConflict:'key'});
+  showSaveMsg('etapeReglesSaveMsg');
+  showToast({icon:'📜',title:'Règles des étapes enregistrées',duration:2500});
 }
 
 function selectEtape(i, btn) {
