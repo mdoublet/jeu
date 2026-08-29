@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.23-17:44:53</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.29-22:11:03</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -531,10 +531,14 @@ function renderTeamView() {
     stopTimer();
     document.getElementById('timerBand').style.display='none';
     document.getElementById('stepRow').style.display='none';
+    // Total recalculé depuis les scores d'étape/épreuve (cohérent avec le suivi admin) ;
+    // ne jamais afficher le total_score brut qui peut inclure des clés parasites.
+    const scDone = getScores();
+    const totalDone = Object.entries(scDone).reduce((acc,[k,v])=>/^(?:etape|ep)_\d+$/.test(k)?acc+(v||0):acc, 0);
     document.getElementById('teamContent').innerHTML = `
       <div class="done-block">
         <div style="font-size:48px;margin-bottom:16px">🏆</div>
-        <div class="done-score">${teamState?.total_score||0}</div>
+        <div class="done-score">${totalDone}</div>
         <div style="font-size:14px;color:var(--ink-muted);margin-top:8px">points · jeu terminé !</div>
       </div>`;
     return;
@@ -2302,7 +2306,8 @@ function subscribeRealtime() {
           Object.keys(localScores).forEach(k => {
             if ((localScores[k]||0) > (mergedScores[k]||0)) mergedScores[k] = localScores[k];
           });
-          const mergedTotal = Object.values(mergedScores).reduce((a,b)=>a+(b||0),0);
+          // Ne sommer QUE les scores d'étape/épreuve (pas les errmot_N ni autres clés).
+          const mergedTotal = Object.entries(mergedScores).reduce((acc,[k,v])=>/^(?:etape|ep)_\d+$/.test(k)?acc+(v||0):acc, 0);
 
           teamState = {
             ...tsRes.data,

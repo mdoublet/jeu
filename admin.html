@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.23-17:44:53</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.29-22:11:03</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -4324,7 +4324,10 @@ function renderJdpScores(){
     </div>`;
     fillDiapoDurations();
   }
-  const ranked=teams.map(t=>({name:t,total:jdpData.teamStates[t]?.total_score||0})).sort((a,b)=>b.total-a.total);
+  // Total recalculé depuis scores_etapes (somme des seules clés etape_/ep_), pour rester
+  // cohérent avec le suivi et l'app joueur, sans dépendre du total_score stocké.
+  const teamTotal=(t)=>{ const s=jdpTeamScores(jdpData.teamStates[t]); return Object.entries(s).reduce((a,[k,v])=>/^(?:etape|ep)_\d+$/.test(k)?a+(v||0):a,0); };
+  const ranked=teams.map(t=>({name:t,total:teamTotal(t)})).sort((a,b)=>b.total-a.total);
   const maxPts=Math.max(...ranked.map(r=>r.total),1);
   const medals=['🥇','🥈','🥉'],rc=['gold','silver','bronze'];
   lb.innerHTML=ranked.map((r,i)=>`<div class="lb-row"><span class="lb-rank ${rc[i]||''}">${medals[i]||i+1}</span><span class="lb-name">${r.name}</span><div class="lb-bar-wrap"><div class="lb-bar" style="width:${Math.round(r.total/maxPts*100)}%"></div></div><span class="lb-pts">${r.total} pts</span></div>`).join('');
@@ -4334,8 +4337,8 @@ function renderJdpScores(){
   det.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
     <thead><tr style="background:var(--cream)"><th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Équipe</th>${Array.from({length:nb},(_,i)=>`<th style="padding:8px;text-align:center;border-bottom:1px solid var(--border)">É${i+1}</th>`).join('')}<th style="padding:8px;text-align:right;border-bottom:1px solid var(--border)">Total</th></tr></thead>
     <tbody>${teams.map(t=>{
-      const ts=jdpData.teamStates[t];const scores=ts?.scores_etapes||[];
-      return`<tr><td style="padding:8px;font-weight:500;border-bottom:1px solid var(--border)">${t}</td>${Array.from({length:nb},(_,i)=>`<td style="padding:8px;text-align:center;border-bottom:1px solid var(--border);color:var(--ink-muted)">${scores[i]??'—'}</td>`).join('')}<td style="padding:8px;text-align:right;font-weight:500;color:var(--gold-dark);border-bottom:1px solid var(--border)">${ts?.total_score||0}</td></tr>`;
+      const sc=jdpTeamScores(jdpData.teamStates[t]);
+      return`<tr><td style="padding:8px;font-weight:500;border-bottom:1px solid var(--border)">${t}</td>${Array.from({length:nb},(_,i)=>`<td style="padding:8px;text-align:center;border-bottom:1px solid var(--border);color:var(--ink-muted)">${sc['etape_'+i]??'—'}</td>`).join('')}<td style="padding:8px;text-align:right;font-weight:500;color:var(--gold-dark);border-bottom:1px solid var(--border)">${teamTotal(t)}</td></tr>`;
     }).join('')}</tbody></table></div>`;
 }
 
