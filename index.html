@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.29-22:11:03</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.29-22:27:28</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -857,6 +857,7 @@ function renderMarcheSchedule(sched, parcours) {
     `<div class="enigme-card" style="margin-bottom:10px">
       <div class="enigme-text">${(etape.enigme||'').replace(/\n/g,'<br>')||'<em style="opacity:.4">—</em>'}</div>
     </div>`
+    + renderIndiceBlocs(etape, sched)
     + (isCaptain ? `<div class="card">
       <div class="card-title">🔑 Mot-clé trouvé ?</div>
       <input type="text" id="motcleInput" class="code-input" placeholder="Mot-clé…" maxlength="30"
@@ -874,27 +875,77 @@ function renderMarcheSchedule(sched, parcours) {
 // que croître au fil du temps (plus de clignotement apparition/disparition).
 const ETAPE_NB_INDICES = 5;
 const ETAPE_SCORE_MAX = 10;
-const ETAPE_COUT_INDICE = 2;
-const ETAPE_PENALITE_ERREUR = 1; // points perdus par mauvaise réponse au mot-clé
+const ETAPE_COUT_INDICE = 1;     // −1 pt par indice révélé
+const ETAPE_PENALITE_ERREUR = 1; // −1 pt par mauvaise réponse au mot-clé
+const ETAPE_ANSWER_LEAD = 10;    // la réponse est révélée 10 s avant la fin (saisie fermée)
 // Nombre de mauvaises réponses au mot-clé déjà saisies pour cette étape. Persisté dans
-// scores_etapes sous la clé errmot_<stepIdx> (ignorée du calcul du total : la regex de
-// sommation ne matche que etape_N / ep_N).
+// scores_etapes sous la clé errmot_<stepIdx> (ignorée du calcul du total).
 function motcleErreurs(stepIdx) {
   return getScores()['errmot_'+stepIdx] || 0;
 }
-// Score d'étape en direct : départ 10, −2 par indice affiché, −1 par mauvaise réponse.
+// Score d'étape en direct : départ 10, −1 par indice révélé, −1 par mauvaise réponse.
 function scoreEtapeLive(shown, stepIdx) {
   return Math.max(0, ETAPE_SCORE_MAX - shown*ETAPE_COUT_INDICE - motcleErreurs(stepIdx)*ETAPE_PENALITE_ERREUR);
 }
-function indicesAffichesNow(sched) {
-  if (!sched || sched.phase !== 'etape') return 0;
+// Secondes restantes (virtuelles) avant la fin de la phase étape. Infinity hors phase étape.
+function etapeRemainingSecs(sched) {
+  if (!sched || sched.phase !== 'etape') return Infinity;
   const mult = gameState?.time_multiplier || 1;
   const H = gameState?.started_at ? new Date(gameState.started_at).getTime() : Date.now();
   const virtualNow = H + (Date.now() - H) * mult;
-  const elapsed = virtualNow - sched.phaseStart;
-  const trancheDurMs = (sched.phaseEnd - sched.phaseStart) / (ETAPE_NB_INDICES + 1);
-  if (trancheDurMs <= 0 || elapsed <= 0) return 0;
-  return Math.min(ETAPE_NB_INDICES, Math.floor(elapsed / trancheDurMs));
+  return (sched.phaseEnd - virtualNow) / 1000;
+}
+// Indices révélés = fonction du TEMPS RESTANT : indice k visible (ETAPE_NB_INDICES+1−k)
+// minutes avant la fin → indice 1 à 5 min, indice 2 à 4 min, …, indice 5 à 1 min.
+function indicesAffichesNow(sched) {
+  const r = etapeRemainingSecs(sched);
+  if (r === Infinity) return 0;
+  if (r <= 0) return ETAPE_NB_INDICES;
+  let n = 0;
+  for (let k = 1; k <= ETAPE_NB_INDICES; k++) { if (r <= (ETAPE_NB_INDICES + 1 - k) * 60) n = k; }
+  return n;
+}
+// La réponse (mot-clé) est révélée ETAPE_ANSWER_LEAD s avant la fin → saisie désactivée.
+function motcleReveleNow(sched) {
+  const r = etapeRemainingSecs(sched);
+  return r !== Infinity && r <= ETAPE_ANSWER_LEAD;
+}
+// Rendu partagé des 6 blocs sous l'énigme : 5 indices + la réponse, chacun « invisible »
+// tant que non révélé, avec l'horaire d'apparition.
+function renderIndiceBlocs(etape, sched) {
+  const revealed = indicesAffichesNow(sched);
+  const answerShown = motcleReveleNow(sched);
+  let h = '<div style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px">';
+  for (let k = 1; k <= ETAPE_NB_INDICES; k++) {
+    const min = ETAPE_NB_INDICES + 1 - k; // 5,4,3,2,1
+    if (k <= revealed) {
+      const txt = ((etape.indices||[])[k-1]||'').replace(/\n/g,'<br>');
+      h += `<div style="background:var(--warm-white);border:1px solid var(--gold-light);border-radius:var(--radius-sm);padding:10px 13px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gold-dark);margin-bottom:3px">Indice n°${k} · <span style="color:var(--danger)">−1 pt</span></div>
+        <div style="font-size:14px;font-style:italic;color:var(--ink-soft);line-height:1.5">${txt||'—'}</div>
+      </div>`;
+    } else {
+      h += `<div style="background:var(--cream);border:1px dashed var(--border);border-radius:var(--radius-sm);padding:10px 13px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:15px">🔒</span>
+        <div><div style="font-size:12px;font-weight:600;color:var(--ink-muted)">Indice n°${k}</div>
+        <div style="font-size:11px;color:var(--ink-muted)">Invisible — apparaîtra ${min} min avant la fin</div></div>
+      </div>`;
+    }
+  }
+  if (answerShown) {
+    const code = ((etape.indices||[])[5]||etape.code||'');
+    h += `<div style="background:var(--gold-light);border:1px solid var(--gold);border-radius:var(--radius-sm);padding:10px 13px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gold-dark);margin-bottom:3px">🔑 Réponse</div>
+      <div style="font-size:17px;font-weight:700;color:var(--gold-dark)">${code||'—'}</div>
+    </div>`;
+  } else {
+    h += `<div style="background:var(--cream);border:1px dashed var(--border-strong);border-radius:var(--radius-sm);padding:10px 13px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:15px">🔒</span>
+      <div><div style="font-size:12px;font-weight:600;color:var(--amber)">Réponse (mot-clé)</div>
+      <div style="font-size:11px;color:var(--ink-muted)">Invisible — apparaîtra 10 s avant la fin (saisie désactivée)</div></div>
+    </div>`;
+  }
+  return h + '</div>';
 }
 
 function renderEtapeSchedule(sched, parcours) {
@@ -943,19 +994,20 @@ function renderEtapeSchedule(sched, parcours) {
     return;
   }
 
-  // Nombre d'indices affichés = pur calcul temporel
+  // Nombre d'indices révélés = fonction du temps restant
   const indicesAffiches = indicesAffichesNow(sched);
   const scoreActuel = scoreEtapeLive(indicesAffiches, stepIdx);
-  const trancheDurMs = (sched.phaseEnd - sched.phaseStart) / (NB_INDICES + 1);
 
-  // Replanifier un simple RE-RENDER à chaque prochain palier (jamais d'écriture en base)
-  for (let i = indicesAffiches; i < NB_INDICES; i++) {
-    const triggerAt = sched.phaseStart + trancheDurMs * (i + 1);
-    const realDelayMs = Math.max(0, (triggerAt - virtualNow) / mult);
-    if (realDelayMs >= 0 && realDelayMs < 3600000) {
-      scheduleTimer('indice_'+stepIdx+'_'+(i+1), Date.now()+realDelayMs+40, () => renderTeamView());
+  // Replanifier un RE-RENDER à chaque prochaine apparition (indices puis réponse)
+  const revealTimes = [];
+  for (let k = 1; k <= NB_INDICES; k++) revealTimes.push(sched.phaseEnd - (NB_INDICES + 1 - k) * 60000);
+  revealTimes.push(sched.phaseEnd - ETAPE_ANSWER_LEAD * 1000);
+  revealTimes.forEach((tv, i) => {
+    const realDelay = (tv - virtualNow) / mult;
+    if (realDelay > 0 && realDelay < 3600000) {
+      scheduleTimer('reveal_'+stepIdx+'_'+i, Date.now()+realDelay+40, () => renderTeamView());
     }
-  }
+  });
 
   // Fin du temps → étape terminée (mot-clé raté) à 0 pt
   const realRemainingMs = Math.max(0, remaining * 1000 / mult);
@@ -973,44 +1025,23 @@ function renderEtapeSchedule(sched, parcours) {
     });
   }
 
-  // Indices : textes affichés à la suite
-  const indicesTextes = [];
-  for (let k = 0; k < NB_INDICES; k++) {
-    if (k < indicesAffiches) {
-      const txt = (etape.indices||[])[k]||'';
-      if (txt) indicesTextes.push(txt.replace(/\n/g,'<br>'));
-    }
-  }
-  // Après le 5e indice, on révèle le mot-clé pour éviter un blocage
-  if (indicesAffiches >= NB_INDICES) {
-    const codeTxt = (etape.indices||[])[5]||etape.code||'';
-    if (codeTxt) indicesTextes.push(`🔑 <strong>${codeTxt}</strong>`);
-  }
-  // Temps avant le prochain indice
-  const prochainTrigger = sched.phaseStart + trancheDurMs * (indicesAffiches + 1);
-  const secsToNext = Math.max(0, Math.round((prochainTrigger - virtualNow) / 1000));
+  // Blocs indices + réponse (apparition selon le temps restant)
+  const indicesHtml = renderIndiceBlocs(etape, sched);
 
-  let indicesHtml = '';
-  if (indicesTextes.length || (indicesAffiches < NB_INDICES && secsToNext > 0)) {
-    const prochainTxt = (indicesAffiches < NB_INDICES && secsToNext > 0)
-      ? `<div style="margin-top:${indicesTextes.length?'8px':'0'};padding-top:${indicesTextes.length?'8px':'0'};${indicesTextes.length?'border-top:1px dashed var(--border);':''}font-size:11px;color:var(--ink-muted)">💡 Prochain indice dans ${secsToNext}s</div>`
-      : '';
-    indicesHtml = `<div style="padding:10px 14px;background:var(--warm-white);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px">
-      ${indicesTextes.map(t=>`<p style="font-size:14px;color:var(--ink);font-style:italic;line-height:1.6;margin:0 0 4px">${t}</p>`).join('')}
-      ${prochainTxt}
-    </div>`;
-  }
-
+  // Une fois la réponse révélée (10 s avant la fin), la saisie du mot-clé est désactivée.
+  const saisieDesactivee = motcleReveleNow(sched);
   const galetHtml = isCaptain ? `
     <div class="card">
       <div class="card-title">🔑 Mot-clé trouvé ?</div>
-      <p style="font-size:13px;color:var(--ink-muted);margin-bottom:10px">Entrez le mot-clé pour valider cette étape.</p>
+      ${saisieDesactivee
+        ? `<div class="warn-box" style="margin-bottom:0">⏱ La réponse a été révélée — la saisie est désormais désactivée.</div>`
+        : `<p style="font-size:13px;color:var(--ink-muted);margin-bottom:10px">Entrez le mot-clé pour valider cette étape.</p>
       <input type="text" id="motcleInput" class="code-input" placeholder="Mot-clé…" maxlength="30"
         value="${motcleSaisi||''}"
         oninput="motcleSaisi=this.value"
         onkeydown="if(event.key==='Enter') validerMotcle()">
       <button class="btn btn-gold btn-full" style="margin-top:10px" onclick="validerMotcle()">✓ Valider le mot-clé</button>
-      <div style="font-size:12px;color:var(--danger);margin-top:6px;display:none" id="motcleErr">Mot-clé incorrect.</div>
+      <div style="font-size:12px;color:var(--danger);margin-top:6px;display:none" id="motcleErr">Mot-clé incorrect.</div>`}
     </div>` : `<div class="warn-box">🔒 Seul le capitaine peut entrer le mot-clé.</div>`;
 
   document.getElementById('teamContent').innerHTML =
@@ -1214,6 +1245,9 @@ async function validerMotcle() {
   const bloc = parcours[stepIdx];
   const etapeId = String(bloc?.etapeId||'');
   const etape = appData.etapes.find(e=>String(e.id)===etapeId) || appData.etapes[stepIdx];
+
+  // La réponse est révélée (10 s avant la fin) → saisie fermée, on n'accepte plus rien.
+  if (motcleReveleNow(sched)) { renderTeamView(); return; }
 
   if (!etape?.code) {
     if (errEl) { errEl.textContent='Mot-clé non configuré.'; errEl.style.display='block'; }

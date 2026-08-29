@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.29-22:11:03</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.29-22:27:28</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -4276,10 +4276,9 @@ function updateScoringPreview(){
   const prev=document.getElementById('jdpScoringPreview');
   if(prev) prev.innerHTML=`<strong>Résumé :</strong><br>
     • Score de départ par étape : <strong>${sd} pts</strong><br>
-    • Chaque indice : <strong>−${ci} pt${ci>1?'s':''}</strong> · débloqué toutes les 2 min<br>
+    • Chaque indice révélé : <strong>−1 pt</strong> · indices 1 à 5 dévoilés de 5 à 1 min avant la fin<br>
     • Chaque mauvaise réponse au mot-clé : <strong>−1 pt</strong><br>
-    • Chaque minute écoulée : <strong>−${pt} pt${pt>1?'s':''}</strong><br>
-    • Indice 6 (code) : débloqué après <strong>${dm} min</strong><br>
+    • Réponse (mot-clé) dévoilée <strong>10 s avant la fin</strong> — la saisie est alors désactivée<br>
     • Épreuve GM : jusqu'à <strong>${se} pts</strong><br>
     • Score max par étape : <strong>${sd+se} pts</strong> · Total max (${nb} étapes) : <strong>${maxTotal} pts</strong>`;
 }
