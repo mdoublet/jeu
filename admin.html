@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.30-08:06:26</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.30-09:14:29</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -1333,10 +1333,9 @@ function renderAdminEpreuves(){
   renderEpEditor();
 }
 function switchEpTab(id,btn){
-  flushCurrentEpEdits();
+  flushCurrentEpEdits(); // sauve l'épreuve courante + re-render onglets (détache btn)
   currentEpTab=id;
-  document.querySelectorAll('#adminEpTabs .ep-tab').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
+  renderEpTabsOnly();    // reconstruit les onglets avec le bon actif (ne pas se fier à btn détaché)
   renderEpEditor();
 }
 function flushCurrentEpEdits() {
@@ -3772,10 +3771,10 @@ async function saveEtapeRegles() {
 }
 
 function selectEtape(i, btn) {
-  flushCurrentEtapeEdits();
+  flushCurrentEtapeEdits(); // sauve les champs de l'étape courante (ancien index) + re-render onglets
   currentEtapeIdx = i;
-  document.querySelectorAll('#etapesTabs .ep-tab').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
+  renderEtapeTabsOnly();    // reconstruit les onglets avec le BON onglet actif (ne pas se fier à btn,
+                            //  qui a été détaché par le re-render de flushCurrentEtapeEdits)
   renderEtapeEditor();
 }
 
