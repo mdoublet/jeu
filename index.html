@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-09:49:32</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-09:53:08</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -526,7 +526,6 @@ function renderTeamView() {
               <span style="font-size:14px;color:var(--ink)">${(m.nom||'').replace(/</g,'&lt;')}${cap===m.nom?' <span style="font-size:11px;color:var(--gold-dark)">⚓ capitaine</span>':''}${m.nom===currentPlayer?' <span style="font-size:11px;color:var(--ink-muted)">(toi)</span>':''}</span>
             </div>`).join('')
           : '<div style="font-size:13px;color:var(--ink-muted)">Aucun joueur listé pour cette équipe.</div>'}
-        <div style="font-size:11px;color:var(--ink-muted);margin-top:10px;line-height:1.5">Vérifiez que toute l'équipe est là. Un joueur manquant doit se connecter avec son prénom.</div>
       </div>`;
     document.getElementById('teamContent').innerHTML = `
       <div class="waiting-screen">
