@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-09:28:10</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-09:49:32</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -511,6 +511,23 @@ function renderTeamView() {
     document.getElementById('timerBand').style.display='none';
     document.getElementById('stepRow').style.display='none';
     const cap = appData.capitaines[currentTeam];
+    const membres = appData.joueurs
+      .filter(j => j.equipe_nom === currentTeam)
+      .sort((a,b) => (a.nom||'').localeCompare(b.nom||'','fr'));
+    const rosterHtml = `
+      <div style="margin-top:22px;width:100%;max-width:360px;background:var(--warm-white);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;text-align:left">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-size:14px;font-weight:600;color:var(--ink)">👥 Ton équipe</div>
+          <div style="font-size:12px;font-weight:600;color:var(--gold-dark);background:var(--gold-light);border-radius:var(--radius-pill);padding:2px 12px">${membres.length} joueur${membres.length>1?'s':''}</div>
+        </div>
+        ${membres.length
+          ? membres.map(m=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+              <span style="width:26px;height:26px;border-radius:50%;background:var(--gold-light);color:var(--gold-dark);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">${(m.nom||'?').charAt(0).toUpperCase()}</span>
+              <span style="font-size:14px;color:var(--ink)">${(m.nom||'').replace(/</g,'&lt;')}${cap===m.nom?' <span style="font-size:11px;color:var(--gold-dark)">⚓ capitaine</span>':''}${m.nom===currentPlayer?' <span style="font-size:11px;color:var(--ink-muted)">(toi)</span>':''}</span>
+            </div>`).join('')
+          : '<div style="font-size:13px;color:var(--ink-muted)">Aucun joueur listé pour cette équipe.</div>'}
+        <div style="font-size:11px;color:var(--ink-muted);margin-top:10px;line-height:1.5">Vérifiez que toute l'équipe est là. Un joueur manquant doit se connecter avec son prénom.</div>
+      </div>`;
     document.getElementById('teamContent').innerHTML = `
       <div class="waiting-screen">
         <div class="hourglass">⏳</div>
@@ -522,6 +539,7 @@ function renderTeamView() {
                ⚓ Seul le capitaine pourra saisir les réponses pour toute l'équipe — choisissez quelqu'un à l'aise avec son smartphone.
              </div>`
         }
+        ${rosterHtml}
       </div>`;
     return;
   }
