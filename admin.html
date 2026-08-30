@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.30-09:53:08</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.30-13:08:14</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -2193,13 +2193,8 @@ async function renderAdminPhotos(){
   const pending=photos.filter(p=>p.statut==='en_attente');
   const done=photos.filter(p=>p.statut!=='en_attente');
 
-  // Précharger les data pour toutes les photos affichées (pas en cache)
-  const allPhotos = [...pending, ...done];
-  const toFetch = allPhotos.filter(p => !photoDataCache.has(p.id)).map(p=>p.id);
-  if (toFetch.length) {
-    const {data: datas} = await db.from('photos').select('id,data').in('id', toFetch);
-    (datas||[]).forEach(d => photoDataCache.set(d.id, d.data));
-  }
+  // Pas de préchargement en masse (une seule grosse requête = risque de timeout Supabase) :
+  // chaque vignette charge sa propre image à la demande via loadAdminPhotoThumb (mise en cache).
   let html='';
   if(pending.length){html+=`<div style="font-size:14px;font-weight:500;margin-bottom:12px;color:var(--amber)">⏳ En attente (${pending.length})</div>`;html+=pending.map(adminPhotoCard).join('');if(done.length)html+=`<div class="divider" style="margin:16px 0"></div>`;}
   if(done.length){html+=`<div style="font-size:14px;font-weight:500;margin-bottom:12px">Traitées</div>`;html+=done.map(adminPhotoCard).join('');}
@@ -2779,12 +2774,27 @@ async function saveAnecdotesAndEpreuve(){
   showSaveMsg('epSaveMsg');
   showToast({icon:'✅',title:`Anecdotes enregistrées`,msg:`${removed} supprimée(s) · ${inserted} réécrite(s)`,duration:6000});
 }
+const archivePhotoCache = new Map();
+async function loadArchivePhotoThumb(id, imgElId){
+  let d = archivePhotoCache.get(id);
+  if (!d) {
+    try { const {data}=await db.from('photos_archive').select('data').eq('id',id).single(); if(data?.data){ d=data.data; archivePhotoCache.set(id,d); } }
+    catch(e){ return; }
+  }
+  const el=document.getElementById(imgElId);
+  if (el && d) el.src=d;
+}
+async function openArchivePhoto(id){
+  let d = archivePhotoCache.get(id);
+  if (!d) { try { const {data}=await db.from('photos_archive').select('data').eq('id',id).single(); if(data){ d=data.data; archivePhotoCache.set(id,d); } }catch(e){ return; } }
+  if (d) { document.getElementById('photoViewerImg').src=d; document.getElementById('photoViewer').classList.add('open'); }
+}
 async function renderAdminArchive(){
   const el=document.getElementById('adminArchiveContent');
   el.innerHTML='<div class="loader-text" style="padding:1rem">Chargement...</div>';
 
   const [{data:photoArchive},{data:pbArchive},{data:scoresArchive},{data:detailArchive}]=await Promise.all([
-    db.from('photos_archive').select('*').order('archived_at',{ascending:false}),
+    db.from('photos_archive').select('id,equipe_nom,challenge_num,attempt_num,statut,points,archive_label,archived_at').order('archived_at',{ascending:false}),
     db.from('petit_bac_archive').select('*').order('archived_at',{ascending:false}),
     db.from('scores_archive').select('*').order('archived_at',{ascending:false}),
     db.from('reponses_detail_archive').select('*').order('archived_at',{ascending:false})
@@ -2977,8 +2987,8 @@ async function renderAdminArchive(){
           <div style="margin-bottom:10px">
             <div style="font-size:13px;font-weight:500;margin-bottom:6px">${team}</div>
             <div class="archive-grid">
-              ${list.map(p=>`<div class="archive-thumb" onclick="openPhotoViewer('${p.data}')">
-                <img src="${p.data}" alt="">
+              ${list.map(p=>`<div class="archive-thumb" onclick="openArchivePhoto(${p.id})">
+                <img id="arch_photo_${p.id}" src="" alt="" style="background:var(--cream)">
                 <div class="archive-thumb-label">Ch.${p.challenge_num||1} · E${p.attempt_num||'?'} · ${p.statut==='validee'?'+'+p.points+'pts':p.statut}</div>
               </div>`).join('')}
             </div>
@@ -2990,6 +3000,11 @@ async function renderAdminArchive(){
   });
 
   el.innerHTML=html||'<div class="notice">Aucune archive disponible.</div>';
+  // Charger les vignettes des photos archivées une par une (évite une requête massive)
+  el.querySelectorAll('img[id^="arch_photo_"]').forEach(img=>{
+    const id=parseInt(img.id.replace('arch_photo_',''));
+    if(id) loadArchivePhotoThumb(id, img.id);
+  });
 }
 
 // ===================== LEADERBOARD =====================
@@ -3324,27 +3339,53 @@ function renderChallengeBlock(chNum,state,person,teamName,locked=false,isEpreuve
   </div>`;
 }
 
+// Redimensionne + compresse une image (max 1280 px, JPEG 0.7) avant l'upload, pour
+// éviter des lignes base64 énormes et les timeouts Supabase à la relecture.
+function resizePhoto(file, maxDim = 1280, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('lecture impossible'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('image illisible'));
+      img.onload = () => {
+        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        try {
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/jpeg', quality));
+        } catch (e) { resolve(reader.result); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 async function handleChallengePhoto(e,chNum){
   const file=e.target.files[0];if(!file||!currentPhotoTeam) return;
+  e.target.value='';
   if(!challengeState[currentPhotoTeam]) challengeState[currentPhotoTeam]={1:{attempts:[],done:false,points:0},2:{attempts:[],done:false,points:0}};
   const st=challengeState[currentPhotoTeam][chNum];
   const attemptNum=st.attempts.length+1;
   if(attemptNum>MAX_ATTEMPTS||st.done) return;
-  const reader=new FileReader();
-  reader.onload=async ev=>{
-    const {data:inserted}=await db.from('photos').insert({
-      equipe_nom:currentPhotoTeam,epreuve_id:currentGMStation,
-      data:ev.target.result,statut:'en_attente',points:0,
-      challenge_num:chNum,attempt_num:attemptNum
-    }).select().single();
-    if(inserted){
-      // Reload challenge state to keep dots in sync
-      await loadChallengeState();
-      showToast({icon:'📤',title:`Essai n°${attemptNum} envoyé`,msg:'En attente de validation...',duration:4000});
-      renderPhotoChallengeUI(currentPhotoTeam);
-    }
-  };
-  reader.readAsDataURL(file);e.target.value='';
+  let dataUrl;
+  try { dataUrl = await resizePhoto(file, 1280, 0.7); }
+  catch(err){ showToast({icon:'⚠️',title:'Photo illisible',msg:String(err.message||err),type:'danger',duration:5000}); return; }
+  const {data:inserted}=await db.from('photos').insert({
+    equipe_nom:currentPhotoTeam,epreuve_id:currentGMStation,
+    data:dataUrl,statut:'en_attente',points:0,
+    challenge_num:chNum,attempt_num:attemptNum
+  }).select().single();
+  if(inserted){
+    await loadChallengeState();
+    showToast({icon:'📤',title:`Essai n°${attemptNum} envoyé`,msg:'En attente de validation...',duration:4000});
+    renderPhotoChallengeUI(currentPhotoTeam);
+  }
 }
 
 // ===================== PETIT BAC DES VILLES =====================

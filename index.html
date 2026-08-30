@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-09:53:08</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-13:08:14</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -1723,41 +1723,72 @@ function renderEpreuvePhoto(epreuve) {
     </div>`;
 }
 
+// Redimensionne + compresse une image (canvas) avant l'upload. Une photo de téléphone
+// pèse plusieurs Mo en base64 → requêtes Supabase qui expirent. On plafonne à maxDim px
+// et on encode en JPEG qualité ~0.7 → ~150-300 Ko, ce qui évite les timeouts.
+function resizePhoto(file, maxDim = 1280, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('lecture impossible'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('image illisible'));
+      img.onload = () => {
+        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (e) { resolve(reader.result); } // repli : image d'origine
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 async function soumettrePhoto(chNum, input) {
   if (!isCaptain || !input.files[0]) return;
   if (gameState?.status !== 'active') return;
-  const reader = new FileReader();
-  reader.onload = async e => {
-    const state = (()=>{try{return JSON.parse(teamState.reponse_epreuve||'{}');}catch(e){return {};}})();
-    if (!state.ch1) state.ch1 = {attempts:[], done:false, points:0};
-    if (!state.ch2) state.ch2 = {attempts:[], done:false, points:0};
-    const st = chNum===1 ? state.ch1 : state.ch2;
-    if (st.done || st.attempts.length >= 5) return;
-
-    // 1. INSERT dans photos (avec data base64) — table dédiée, donc pas de bloat sur jp_team_states
-    const {data: inserted, error} = await db.from('photos').insert({
-      equipe_nom: currentTeam,
-      epreuve_id: appData.epreuves.find(ep=>ep.type==='photos')?.id||1,
-      data: e.target.result,
-      statut: 'en_attente',
-      points: 0,
-      challenge_num: chNum,
-      attempt_num: st.attempts.length + 1
-    }).select('id').single();
-
-    if (error) {
-      alert('Erreur lors de l\'envoi de la photo : ' + error.message);
-      return;
-    }
-
-    // 2. UPDATE jp_team_states avec uniquement les métadonnées (PAS la data base64)
-    st.attempts.push({id: inserted?.id, statut:'en_attente', points:0});
-    await db.from('jp_team_states').update({reponse_epreuve: JSON.stringify(state)}).eq('equipe_nom', currentTeam);
-    Object.assign(teamState, {reponse_epreuve: JSON.stringify(state)});
-    renderTeamView();
-  };
-  reader.readAsDataURL(input.files[0]);
+  const file = input.files[0];
   input.value = '';
+
+  let dataUrl;
+  try { dataUrl = await resizePhoto(file, 1280, 0.7); }
+  catch (e) { alert('Impossible de traiter la photo : ' + (e.message || e)); return; }
+
+  const state = (()=>{try{return JSON.parse(teamState.reponse_epreuve||'{}');}catch(e){return {};}})();
+  if (!state.ch1) state.ch1 = {attempts:[], done:false, points:0};
+  if (!state.ch2) state.ch2 = {attempts:[], done:false, points:0};
+  const st = chNum===1 ? state.ch1 : state.ch2;
+  if (st.done || st.attempts.length >= 5) return;
+
+  // 1. INSERT dans photos (image compressée) — table dédiée, pas de bloat sur jp_team_states
+  const {data: inserted, error} = await db.from('photos').insert({
+    equipe_nom: currentTeam,
+    epreuve_id: appData.epreuves.find(ep=>ep.type==='photos')?.id||1,
+    data: dataUrl,
+    statut: 'en_attente',
+    points: 0,
+    challenge_num: chNum,
+    attempt_num: st.attempts.length + 1
+  }).select('id').single();
+
+  if (error) {
+    alert('Erreur lors de l\'envoi de la photo : ' + error.message);
+    return;
+  }
+
+  // 2. UPDATE jp_team_states avec uniquement les métadonnées (PAS la data base64)
+  st.attempts.push({id: inserted?.id, statut:'en_attente', points:0});
+  await db.from('jp_team_states').update({reponse_epreuve: JSON.stringify(state)}).eq('equipe_nom', currentTeam);
+  Object.assign(teamState, {reponse_epreuve: JSON.stringify(state)});
+  renderTeamView();
 }
 
 // ---- Épreuve Petit Bac ----
