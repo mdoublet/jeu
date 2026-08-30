@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-18:17:02</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-18:56:37</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -502,8 +502,32 @@ function startTimer(endsAt, totalSecs, label, key) {
 }
 
 // ===================== RENDER =====================
+// ---- Bascule automatique vers le diaporama à la fin du jeu ----
+let _diapoTimer = null, _diapoCount = 0;
+function ouvrirDiaporama() {
+  if (_diapoTimer) { clearTimeout(_diapoTimer); _diapoTimer = null; }
+  window.location.href = 'diaporama.html?mode=live';
+}
+function scheduleDiaporamaRedirect() {
+  if (_diapoTimer) return; // déjà programmé
+  _diapoCount = 12;
+  const tick = () => {
+    const el = document.getElementById('diapoCountdown');
+    if (_diapoCount <= 0) { ouvrirDiaporama(); return; }
+    if (el) el.textContent = 'Le diaporama démarre dans ' + _diapoCount + ' s…';
+    _diapoCount--;
+    _diapoTimer = setTimeout(tick, 1000);
+  };
+  tick();
+}
+function cancelDiaporamaRedirect() {
+  if (_diapoTimer) { clearTimeout(_diapoTimer); _diapoTimer = null; }
+}
+
 function renderTeamView() {
   const gs = gameState;
+  // Si le jeu n'est plus terminé (redémarrage GM), annuler une éventuelle bascule.
+  if (gs && gs.status !== 'done') cancelDiaporamaRedirect();
 
   // Jeu en attente
   if (!gs || gs.status === 'waiting') {
@@ -557,7 +581,10 @@ function renderTeamView() {
         <div style="font-size:48px;margin-bottom:16px">🏆</div>
         <div class="done-score">${totalDone}</div>
         <div style="font-size:14px;color:var(--ink-muted);margin-top:8px">points · jeu terminé !</div>
+        <button class="btn btn-gold btn-full" style="margin-top:26px;max-width:320px" onclick="ouvrirDiaporama()">📽️ Voir le diaporama</button>
+        <div id="diapoCountdown" style="font-size:12px;color:var(--ink-muted);margin-top:10px"></div>
       </div>`;
+    scheduleDiaporamaRedirect(); // bascule auto vers le diaporama (une seule fois)
     return;
   }
 
