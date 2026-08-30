@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-09:14:29</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-09:28:10</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -1279,14 +1279,12 @@ async function validerMotcle() {
     const shownErr = Math.min(ETAPE_NB_INDICES, indicesAffichesNow(sched));
     const potentiel = scoreEtapeLive(shownErr, stepIdx);
     motcleSaisi = '';
-    if (input) input.value = '';
-    if (errEl) {
-      errEl.innerHTML = `Mot-clé incorrect — <strong>−${ETAPE_PENALITE_ERREUR} pt</strong>. Score possible : <strong>${potentiel} pt${potentiel!==1?'s':''}</strong>.`;
-      errEl.style.display = 'block';
-    }
     // Journaliser le mauvais mot-clé saisi (pour le diaporama / archives)
     logEtapeDetail(stepIdx, etape, {addWrong: saisi, found:false});
-    updateScoreBand(); // rafraîchir le bandeau sans effacer le message ni le focus
+    // Feedback via toast (survit au re-render) + re-render complet pour que TOUS les
+    // affichages du score se mettent à jour (bandeau ET carré de la barre de progression).
+    showToast({icon:'❌', title:`Mot-clé incorrect — −${ETAPE_PENALITE_ERREUR} pt`, msg:`Score possible : ${potentiel} pt${potentiel!==1?'s':''}`, duration:5000});
+    renderTeamView();
     return;
   }
 
