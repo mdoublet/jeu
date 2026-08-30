@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-13:50:20</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-18:17:02</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -1109,6 +1109,9 @@ function renderAttenteFinEpreuveEnCours(score, sched) {
   const remaining = (endsAt - virtualNow) / 1000;
   if (remaining > 0) {
     startTimer(endsAt, durTotal, 'Suite dans…', 'epreuve_attente_'+currentTeam+'_'+sched.blocIdx);
+    // Filet de sécurité : re-render forcé à la fin du temps de l'épreuve (enchaînement auto).
+    const realDelay = remaining * 1000 / mult;
+    scheduleTimer('epreuve_attente_end_'+sched.blocIdx, Date.now()+realDelay+250, ()=>renderTeamView());
   } else {
     document.getElementById('timerBand').style.display='none';
   }
@@ -1172,6 +1175,10 @@ function renderAttenteFinEtape(score, stepIdx, parcours) {
     // comme la phase étape elle-même → décompte cohérent et continu.
     const totalForBar = (refTotalMs > 0 ? refTotalMs : (endsAt - virtualNow)) / 1000;
     startTimer(endsAt, totalForBar, 'Épreuve dans…', 'etape_attente_'+currentTeam+'_'+stepIdx);
+    // Filet de sécurité : forcer un re-render à la fin de l'étape (= démarrage de
+    // l'épreuve), sans dépendre uniquement du poll → jamais bloqué sur cet écran.
+    const realDelay = durLeft * 1000 / (gameState?.time_multiplier||1);
+    scheduleTimer('etape_attente_end_'+stepIdx, Date.now()+realDelay+250, ()=>renderTeamView());
   } else {
     document.getElementById('timerBand').style.display='none';
   }
@@ -1246,6 +1253,9 @@ function epreuveMaxScore(ep){
 }
 function calcScoreEpreuve(epreuve, rep) {
   if (!epreuve || !rep) return 0;
+  if (epreuve.type === 'photos') {
+    return (rep.ch1?.points||0) + (rep.ch2?.points||0);
+  }
   if (epreuve.type === 'frise') {
     return Object.keys(rep).filter(k=>!isNaN(k)&&rep[k+'_correct']===true).length;
   } else if (epreuve.type === 'qcm') {

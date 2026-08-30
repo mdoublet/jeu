@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.30-13:50:20</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">ADMIN — v2026.08.30-18:17:02</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
 
@@ -2866,6 +2866,7 @@ async function renderAdminArchive(){
     const scoreRows=(scoresArchive||[]).filter(r=>r.archive_label===label);
     const mariesRows=(detailArchive||[]).filter(r=>r.archive_label===label&&r.jeu==='maries');
     const invitesRows=(detailArchive||[]).filter(r=>r.archive_label===label&&r.jeu==='invites');
+    const villesRows=(detailArchive||[]).filter(r=>r.archive_label===label&&r.jeu==='villes');
 
     html+=`<div style="margin-bottom:32px">
       <div style="font-size:15px;font-weight:500;color:var(--ink);padding:10px 14px;background:var(--gold-light);border-radius:var(--radius);margin-bottom:14px;display:flex;align-items:center;gap:8px">
@@ -2925,15 +2926,23 @@ async function renderAdminArchive(){
     }
 
     // ---- Petit Bac ----
-    if(pbReps.length){
-      // Build cross-table: letters as rows, teams as columns
-      const teams=[...new Set(pbReps.map(r=>r.equipe_nom))].sort();
-      const letters=[...new Set(pbReps.map(r=>r.lettre))].sort();
-      const idx={};
-      pbReps.forEach(r=>{ if(!idx[r.lettre]) idx[r.lettre]={}; idx[r.lettre][r.equipe_nom]=r.ville_donnee; });
-      const teamScores={};
-      teams.forEach(t=>{ teamScores[t]=pbReps.filter(r=>r.equipe_nom===t&&r.ville_donnee).length; });
-
+    if(villesRows.length || pbReps.length){
+      // Source prioritaire : le détail 'villes' (flux joueur, avec bon/faux) ; repli sur
+      // l'ancienne table petit_bac_archive (GM) sans info de correction.
+      let teams, letters, idx={}, teamScores={}, hasCorrect;
+      if(villesRows.length){
+        hasCorrect=true;
+        teams=[...new Set(villesRows.map(r=>r.equipe_nom))].sort();
+        letters=[...new Set(villesRows.map(r=>r.question_texte))].sort();
+        villesRows.forEach(r=>{ (idx[r.question_texte]=idx[r.question_texte]||{})[r.equipe_nom]={v:r.reponse_donnee, ok:!!r.correct}; });
+        teams.forEach(t=>{ teamScores[t]=villesRows.filter(r=>r.equipe_nom===t&&r.correct).length; });
+      } else {
+        hasCorrect=false;
+        teams=[...new Set(pbReps.map(r=>r.equipe_nom))].sort();
+        letters=[...new Set(pbReps.map(r=>r.lettre))].sort();
+        pbReps.forEach(r=>{ (idx[r.lettre]=idx[r.lettre]||{})[r.equipe_nom]={v:r.ville_donnee, ok:null}; });
+        teams.forEach(t=>{ teamScores[t]=pbReps.filter(r=>r.equipe_nom===t&&r.ville_donnee).length; });
+      }
       const thS=`padding:7px 8px;font-size:11px;font-weight:500;color:var(--ink-muted);text-align:center;border-bottom:1px solid var(--border);border-left:1px solid var(--border)`;
       html+=`<div style="margin-bottom:14px">
         <div style="font-size:12px;font-weight:500;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🏙 Petit Bac des Villes</div>
@@ -2947,12 +2956,15 @@ async function renderAdminArchive(){
               ${letters.map(l=>`<tr>
                 <td style="padding:7px 10px;font-size:13px;font-weight:700;border-bottom:1px solid var(--border);color:var(--gold-dark)">${l}</td>
                 ${teams.map(t=>{
-                  const v=idx[l]?.[t];
-                  return`<td style="padding:7px 8px;text-align:center;font-size:12px;border-bottom:1px solid var(--border);border-left:1px solid var(--border);${v?'color:var(--success)':'color:var(--ink-muted)'}">${v||'—'}</td>`;
+                  const a=idx[l]?.[t];
+                  if(!a||!a.v) return`<td style="padding:7px 8px;text-align:center;font-size:12px;border-bottom:1px solid var(--border);border-left:1px solid var(--border);color:var(--ink-muted)">—</td>`;
+                  const col = a.ok===true?'var(--success)' : a.ok===false?'var(--danger)' : 'var(--ink)';
+                  const mark = a.ok===true?' ✓' : a.ok===false?' ✗' : '';
+                  return`<td style="padding:7px 8px;text-align:center;font-size:12px;border-bottom:1px solid var(--border);border-left:1px solid var(--border);color:${col};font-weight:${a.ok?'600':'400'}">${a.v}${mark}</td>`;
                 }).join('')}
               </tr>`).join('')}
               <tr style="background:var(--cream)">
-                <td style="padding:7px 10px;font-size:12px;font-weight:600;border-top:2px solid var(--border)">TOTAL</td>
+                <td style="padding:7px 10px;font-size:12px;font-weight:600;border-top:2px solid var(--border)">${hasCorrect?'BONNES RÉPONSES':'TOTAL'}</td>
                 ${teams.map(t=>`<td style="padding:7px 8px;text-align:center;font-size:13px;font-weight:700;color:var(--gold-dark);border-left:1px solid var(--border);border-top:2px solid var(--border)">${teamScores[t]??0}</td>`).join('')}
               </tr>
             </tbody>
@@ -4393,7 +4405,10 @@ function renderJdpScores(){
   const nb=jdpData.lieux.length||4;
   const maxScore=(jdpData.scoring.score_depart+jdpData.scoring.score_epreuve)*nb;
   sg.innerHTML=`<div class="stat-card"><div class="stat-val">${teams.length}</div><div class="stat-lbl">Équipes</div></div><div class="stat-card"><div class="stat-val">${maxScore}</div><div class="stat-lbl">Pts max</div></div><div class="stat-card"><div class="stat-val">${nb}</div><div class="stat-lbl">Étapes</div></div><div class="stat-card"><div class="stat-val">${ranked.filter(r=>r.total>0).length}</div><div class="stat-lbl">En jeu</div></div>`;
-  det.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+  det.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="jdpFixMissingScores()">🩹 Recalculer les scores manquants</button>
+      <span style="font-size:12px;color:var(--ink-muted)">Remplit un score d'épreuve absent à partir des réponses/photos enregistrées.</span>
+    </div>`+`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
     <thead><tr style="background:var(--cream)"><th style="padding:8px;text-align:left;border-bottom:1px solid var(--border)">Équipe</th>${Array.from({length:nb},(_,i)=>`<th style="padding:8px;text-align:center;border-bottom:1px solid var(--border)">É${i+1}</th>`).join('')}<th style="padding:8px;text-align:right;border-bottom:1px solid var(--border)">Total</th></tr></thead>
     <tbody>${teams.map(t=>{
       const sc=jdpTeamScores(jdpData.teamStates[t]);
@@ -4424,6 +4439,53 @@ async function saveDiapoDurations(){
 }
 function openDiaporamaLive(){ window.open('diaporama.html?mode=live','_blank'); }
 function openDiaporamaArchive(label){ window.open('diaporama.html?mode=archive&label='+encodeURIComponent(label||''),'_blank'); }
+
+// Filet de sécurité : recalcule un score d'épreuve absent (ep_N manquant dans
+// scores_etapes) à partir des réponses enregistrées (reponses_detail_archive __live__)
+// et des photos validées — uniquement pour les épreuves RÉELLEMENT jouées.
+async function jdpFixMissingScores(){
+  if(!confirm('Recalculer les scores d\'épreuve manquants à partir des réponses/photos enregistrées ?')) return;
+  const [detRows, photoRows] = await Promise.all([
+    safeLoad(db.from('reponses_detail_archive').select('equipe_nom,jeu,correct').eq('archive_label','__live__')),
+    safeLoad(db.from('photos').select('equipe_nom,statut,points'))
+  ]);
+  // Comptage des bonnes réponses + « a joué » par équipe/jeu
+  const cnt={}, played={};
+  detRows.forEach(r=>{
+    const t=r.equipe_nom, j=r.jeu; if(!t||!j) return;
+    (played[t]=played[t]||{})[j]=true;
+    if(r.correct){ (cnt[t]=cnt[t]||{})[j]=((cnt[t]||{})[j]||0)+1; }
+  });
+  const photoPts={}, photoPlayed={};
+  photoRows.forEach(p=>{ const t=p.equipe_nom; if(!t) return; photoPlayed[t]=true; if(p.statut==='validee') photoPts[t]=(photoPts[t]||0)+(p.points||0); });
+  const jeuOf = ty => ty==='qcm'?'maries' : ty==='frise'?'invites' : ty==='villes'?'villes' : null;
+
+  let fixed=0; const lignes=[];
+  for(const t of appData.teams){
+    const ts=jdpData.teamStates[t]; if(!ts) continue;
+    const sc=jdpTeamScores(ts);
+    const parcours=jdpTeamParcours(ts,t);
+    let changed=false;
+    parcours.forEach((bloc,i)=>{
+      const et=appData.etapes.find(e=>String(e.id)===String(bloc.etapeId));
+      const ep=et?.epreuveId?appData.epreuves.find(e=>String(e.id)===String(et.epreuveId)):(bloc.epreuveId?appData.epreuves.find(e=>String(e.id)===String(bloc.epreuveId)):null);
+      if(!ep) return;
+      const key='ep_'+i;
+      if(sc[key]!==undefined && sc[key]!==null) return; // déjà présent → ne pas écraser
+      let val=null;
+      if(ep.type==='photos'){ if(photoPlayed[t]) val=photoPts[t]||0; }
+      else { const j=jeuOf(ep.type); if(j && played[t] && played[t][j]) val=(cnt[t]&&cnt[t][j])||0; }
+      if(val!==null){ sc[key]=val; changed=true; fixed++; lignes.push(`${t} · ${ep.title}: ${val} pt`); }
+    });
+    if(changed){
+      const total=Object.entries(sc).reduce((a,[k,v])=>/^(?:etape|ep)_\d+$/.test(k)?a+(v||0):a,0);
+      await db.from('jp_team_states').update({scores_etapes:sc, total_score:total}).eq('equipe_nom',t);
+      if(jdpData.teamStates[t]){ jdpData.teamStates[t].scores_etapes=sc; jdpData.teamStates[t].total_score=total; }
+    }
+  }
+  renderJdpScores();
+  showToast({icon: fixed?'🩹':'✅', title: fixed?`${fixed} score(s) recalculé(s)`:'Aucun score manquant à corriger', msg: lignes.slice(0,8).join(' · '), duration:7000});
+}
 
 init();
 </script>
