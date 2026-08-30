@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-13:30:55</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-13:50:20</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -1977,6 +1977,15 @@ async function repQCM(rep) {
   reponses[qIdx] = rep;
   await db.from('jp_team_states').update({reponse_epreuve:JSON.stringify(reponses)}).eq('equipe_nom',currentTeam);
   Object.assign(teamState, {reponse_epreuve:JSON.stringify(reponses)});
+  // Sauvegarder le score de l'épreuve IMMÉDIATEMENT (comme la frise / le petit bac), pour
+  // ne pas dépendre uniquement de terminerEpreuve (résilient aux timeouts / déconnexions).
+  const parcoursQ = getParcours();
+  const Hq = gameState?.started_at ? new Date(gameState.started_at).getTime() : Date.now();
+  const schedQ = computePhaseFromSchedule(Hq, parcoursQ);
+  const blocQ = parcoursQ[schedQ.blocIdx];
+  const etapeQ = appData.etapes?.find(e=>String(e.id)===String(blocQ?.etapeId));
+  const epreuveQ = etapeQ?.epreuveId ? appData.epreuves?.find(ep=>String(ep.id)===String(etapeQ.epreuveId)) : null;
+  if (epreuveQ) await saveScore('ep_'+schedQ.blocIdx, calcScoreEpreuve(epreuveQ, reponses));
   // Journaliser la réponse (quizz des mariés)
   const anecTri = (appData.anecdotes||[]).slice().sort((a,b)=>(a.ordre||0)-(b.ordre||0));
   const aQ = anecTri[qIdx];
@@ -2157,8 +2166,10 @@ async function terminerEpreuve(scoreEpreuve, forceStepIdx) {
     epreuve_status: isLast ? 'done' : 'pending',
     etape_status: 'pending',
   };
-  await db.from('jp_team_states').update(upd).eq('equipe_nom', currentTeam);
+  // État local mis à jour d'abord (l'avancement ne doit pas être bloqué par un échec réseau),
+  // puis écriture avec plusieurs tentatives (résilience à la surcharge Supabase).
   Object.assign(teamState, {...upd, total_score: totalNew});
+  await updateTeamStateRetry(upd);
   stopTimer();
   renderTeamView();
 }
@@ -2304,6 +2315,20 @@ function getScores() {
     return parsed;
   } catch(e) { return {}; }
 }
+// Écriture jp_team_states avec quelques nouvelles tentatives (résilience aux timeouts /
+// surcharge Supabase). Retourne true si l'écriture a fini par réussir.
+async function updateTeamStateRetry(upd, tries = 3) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const { error } = await db.from('jp_team_states').update(upd).eq('equipe_nom', currentTeam);
+      if (!error) return true;
+      console.warn('jp_team_states update échec (essai ' + (i+1) + ')', error.message || error);
+    } catch (e) { console.warn('jp_team_states update exception', e); }
+    if (i < tries - 1) await new Promise(r => setTimeout(r, 500 * (i + 1)));
+  }
+  return false;
+}
+
 async function saveScore(key, val) {
   // Sécurité : ne jamais écrire un score si la partie n'est pas en cours (évite de
   // « ressusciter » d'anciens scores après un reset, avant le rechargement de l'app).
@@ -2320,13 +2345,13 @@ async function saveScore(key, val) {
     if (m && parseInt(m[1]) <= curBloc) return acc + (v||0);
     return acc;
   }, 0);
-  await db.from('jp_team_states')
-    .update({scores_etapes: scores, total_score: total})
-    .eq('equipe_nom', currentTeam);
+  // Mettre à jour l'état LOCAL d'abord : même si l'écriture échoue, la valeur n'est pas
+  // perdue — le dict complet est réécrit au prochain saveScore, donc auto-guérison.
   if (teamState) {
     teamState.scores_etapes = scores;
     teamState.total_score = total;
   }
+  await updateTeamStateRetry({scores_etapes: scores, total_score: total});
   return {scores, total};
 }
 
