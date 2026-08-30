@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-13:08:14</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none">JEU — v2026.08.30-13:26:08</div>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
 
@@ -737,8 +737,11 @@ function renderTeamView() {
   const rawEtape       = teamState?.etape_status  || 'pending';
   const rawEpreuve     = teamState?.epreuve_status || 'pending';
   const statusValide   = stepIdxBase === blocCourant;
-  const etapeStatus    = (statusValide || rawEtape === 'done')   ? rawEtape   : 'pending';
-  const epreuveStatus  = (statusValide || rawEpreuve === 'done') ? rawEpreuve : 'pending';
+  // Un statut 'done' n'est valable que s'il concerne le BLOC COURANT. Sans cette garde,
+  // un 'done' périmé (étape précédente) faisait réapparaître l'écran « mot-clé trouvé »
+  // sur la nouvelle étape (surtout en lecture seule, avant resynchro).
+  const etapeStatus    = statusValide ? rawEtape   : 'pending';
+  const epreuveStatus  = statusValide ? rawEpreuve : 'pending';
 
   if (phase === 'marche' || phase === 'etape') {
     if (etapeStatus === 'done') {
@@ -1290,8 +1293,10 @@ async function validerMotcle() {
     const errKey = 'errmot_'+stepIdx;
     scoresErr[errKey] = (scoresErr[errKey]||0) + 1;
     if (teamState) teamState.scores_etapes = scoresErr;
+    // Persister immédiatement (awaité) pour que la pénalité survive à un rafraîchissement.
     if (gameState?.status === 'active') {
-      db.from('jp_team_states').update({scores_etapes: scoresErr}).eq('equipe_nom', currentTeam);
+      const { error } = await db.from('jp_team_states').update({scores_etapes: scoresErr}).eq('equipe_nom', currentTeam);
+      if (error) { console.warn('errmot write', error); showToast({icon:'⚠️', title:'Pénalité non enregistrée', msg:String(error.message||error), duration:8000}); }
     }
     const shownErr = Math.min(ETAPE_NB_INDICES, indicesAffichesNow(sched));
     const potentiel = scoreEtapeLive(shownErr, stepIdx);
@@ -2301,9 +2306,10 @@ function subscribeRealtime() {
         if (!p.new) return;
         // Protection : ne pas écraser si etape_status='done' local mais pas encore en base
         const sameStep    = (p.new.step_idx ?? -1) === (teamState?.step_idx ?? -1);
-        const localDone   = teamState?.etape_status   === 'done' && p.new.etape_status   !== 'done';
-        const localEpDone = teamState?.epreuve_status === 'done' && p.new.epreuve_status !== 'done';
-        const localShown  = (teamState?.indices_shown||0) >= 6 && (p.new.indices_shown||0) < 6;
+        // Gardes valables uniquement sur la même étape (sinon statut 'done' périmé).
+        const localDone   = sameStep && teamState?.etape_status   === 'done' && p.new.etape_status   !== 'done';
+        const localEpDone = sameStep && teamState?.epreuve_status === 'done' && p.new.epreuve_status !== 'done';
+        const localShown  = sameStep && (teamState?.indices_shown||0) >= 6 && (p.new.indices_shown||0) < 6;
         // Indices monotones : un écho Realtime hors-séquence ne doit jamais faire
         // "reculer" le nombre d'indices déjà affichés sur la même étape, sinon le
         // dernier indice apparaît puis disparaît (clignotement) et le score se décale.
@@ -2326,6 +2332,14 @@ function subscribeRealtime() {
           safe.scores_etapes = merged;
           teamState = safe;
         } else {
+          // Fusion des scores (max) même hors protection, pour ne pas perdre un errmot/score
+          // local pas encore reflété en base (sinon la pénalité de mauvaise réponse « disparaît »).
+          const localScores = getScores();
+          const baseScores = typeof p.new.scores_etapes === 'object' ? p.new.scores_etapes
+            : (()=>{try{return JSON.parse(p.new.scores_etapes||'{}');}catch(e){return {};}})();
+          const merged = {...baseScores};
+          Object.keys(localScores).forEach(k=>{ if((localScores[k]||0)>(merged[k]||0)) merged[k]=localScores[k]; });
+          p.new.scores_etapes = merged;
           teamState = p.new;
         }
         isCaptain = appData.capitaines[currentTeam] === currentPlayer;
@@ -2379,9 +2393,12 @@ function subscribeRealtime() {
         // ou si indices_shown local >= 6 et la base n'est pas encore à jour
         const localShown = teamState?.indices_shown || 0;
         const baseShown  = tsRes.data.indices_shown || 0;
-        // Protéger si mot-clé validé localement OU etape_status='done' local pas encore en base
+        // La protection ne vaut QUE sur la même étape : si la base est passée à un autre
+        // step_idx (nouvelle étape), le 'done'/indices=6 local est PÉRIMÉ et doit céder,
+        // sinon l'écran « mot-clé trouvé » reste collé sur la nouvelle étape.
+        const sameStep  = (teamState?.step_idx ?? -1) === (tsRes.data.step_idx ?? -1);
         const localDone = teamState?.etape_status === 'done' && tsRes.data.etape_status !== 'done';
-        const protege   = (localShown >= 6 && baseShown < 6) || localDone;
+        const protege   = sameStep && ((localShown >= 6 && baseShown < 6) || localDone);
 
         if (!protege) {
           const prevShown   = teamState?.indices_shown;
