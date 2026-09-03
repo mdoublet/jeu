@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.03-21:21:05</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.03-21:29:08</div>
 <script>document.body.style.transition='padding-top .5s';setTimeout(function(){var b=document.getElementById('versionBanner');if(b){b.style.opacity='0';setTimeout(function(){b.style.display='none';},500);}document.body.style.paddingTop='0';},3000);</script>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
@@ -974,12 +974,16 @@ function renderEtapeReglesBloc() {
 // le 1er indice. Affichée pour toutes les étapes SAUF la villa (indice sous un galet).
 function renderSymboleInfo(etape) {
   if (/villa/i.test(etape?.nom||'')) return '';
+  const DEFAUT = "Une fois sur place, cherchez un symbole noir entouré d'un cercle discontinu (comme ci-contre). Le premier indice s'y trouve.";
+  const raw = appData.config?.['jdp_symbole_texte'];
+  const txt = (raw === undefined || raw === null) ? DEFAUT : raw;
+  if (!txt.trim()) return ''; // texte vidé côté admin → ne rien afficher
   return `<div style="display:flex;align-items:center;gap:12px;background:var(--warm-white);border:1px solid var(--gold-light);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px">
     <svg width="46" height="46" viewBox="0 0 54 54" style="flex-shrink:0" aria-hidden="true">
       <circle cx="27" cy="27" r="22" fill="none" stroke="var(--gold)" stroke-width="4" stroke-dasharray="26 8.6" transform="rotate(-45 27 27)"/>
       <circle cx="27" cy="27" r="6" fill="#111"/>
     </svg>
-    <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Une fois sur place, cherchez un <strong>symbole noir</strong> entouré d'un <strong>cercle discontinu</strong> (comme ci-contre). Le <strong>premier indice</strong> s'y trouve.</div>
+    <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">${txt.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
   </div>`;
 }
 // Rendu partagé des 6 blocs sous l'énigme : 5 indices + la réponse, chacun « invisible »

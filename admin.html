@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">ADMIN — v2026.09.03-21:21:05</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">ADMIN — v2026.09.03-21:29:08</div>
 <script>document.body.style.transition='padding-top .5s';setTimeout(function(){var b=document.getElementById('versionBanner');if(b){b.style.opacity='0';setTimeout(function(){b.style.display='none';},500);}document.body.style.paddingTop='0';},3000);</script>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
@@ -291,7 +291,15 @@ input[type=file]{display:none}
       <div class="card-title">📜 Règles du jeu (communes à toutes les étapes)</div>
       <p style="font-size:13px;color:var(--ink-muted);margin-bottom:10px">Ce texte s'affiche, repliable, sous l'énigme sur le téléphone des joueurs — identique pour chaque étape.</p>
       <textarea id="etapeReglesInput" class="admin-textarea" placeholder="Ex : À chaque étape, rendez-vous au lieu indiqué par l'énigme, puis trouvez le mot-clé. Des indices apparaissent au fil du temps…" style="min-height:120px"></textarea>
-      <div style="margin-top:10px"><button class="btn btn-gold btn-sm" onclick="saveEtapeRegles()">💾 Enregistrer les règles</button><span class="save-msg" id="etapeReglesSaveMsg">Sauvegardé ✓</span></div>
+      <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+        <div class="card-title" style="font-size:14px;display:flex;align-items:center;gap:10px">
+          <svg width="30" height="30" viewBox="0 0 54 54" style="flex-shrink:0"><circle cx="27" cy="27" r="22" fill="none" stroke="var(--gold)" stroke-width="4" stroke-dasharray="26 8.6" transform="rotate(-45 27 27)"/><circle cx="27" cy="27" r="6" fill="#111"/></svg>
+          Consigne « symbole sur place »
+        </div>
+        <p style="font-size:12px;color:var(--ink-muted);margin:6px 0 8px">Texte affiché à côté du cercle discontinu, sous l'énigme (sauf pour la Villa). Laissez vide pour ne rien afficher.</p>
+        <textarea id="etapeSymboleInput" class="admin-textarea" placeholder="Ex : Une fois sur place, cherchez un symbole noir entouré d'un cercle discontinu (comme ci-contre). Le premier indice s'y trouve." style="min-height:90px"></textarea>
+      </div>
+      <div style="margin-top:10px"><button class="btn btn-gold btn-sm" onclick="saveEtapeRegles()">💾 Enregistrer</button><span class="save-msg" id="etapeReglesSaveMsg">Sauvegardé ✓</span></div>
     </div>
     <div id="etapeEditor"></div>
   </div>
@@ -3812,16 +3820,25 @@ function renderEtapesTabs() {
 }
 async function loadEtapeRegles() {
   try {
-    const {data} = await db.from('jp_config').select('value').eq('key','jdp_etape_regles').maybeSingle();
+    const {data} = await db.from('jp_config').select('key,value').in('key',['jdp_etape_regles','jdp_symbole_texte']);
+    const c={}; (data||[]).forEach(r=>c[r.key]=r.value);
     const el = document.getElementById('etapeReglesInput');
-    if (el) el.value = data?.value || '';
+    if (el) el.value = c['jdp_etape_regles'] || '';
+    const el2 = document.getElementById('etapeSymboleInput');
+    if (el2) el2.value = (c['jdp_symbole_texte'] !== undefined && c['jdp_symbole_texte'] !== null)
+      ? c['jdp_symbole_texte']
+      : "Une fois sur place, cherchez un symbole noir entouré d'un cercle discontinu (comme ci-contre). Le premier indice s'y trouve.";
   } catch(e) {}
 }
 async function saveEtapeRegles() {
   const val = document.getElementById('etapeReglesInput')?.value || '';
-  await db.from('jp_config').upsert({key:'jdp_etape_regles', value:val},{onConflict:'key'});
+  const symb = document.getElementById('etapeSymboleInput')?.value || '';
+  await Promise.all([
+    db.from('jp_config').upsert({key:'jdp_etape_regles', value:val},{onConflict:'key'}),
+    db.from('jp_config').upsert({key:'jdp_symbole_texte', value:symb},{onConflict:'key'})
+  ]);
   showSaveMsg('etapeReglesSaveMsg');
-  showToast({icon:'📜',title:'Règles des étapes enregistrées',duration:2500});
+  showToast({icon:'📜',title:'Règles & consigne enregistrées',duration:2500});
 }
 
 function selectEtape(i, btn) {
