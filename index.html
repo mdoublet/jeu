@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.03-21:51:12</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.03-21:55:53</div>
 <script>document.body.style.transition='padding-top .5s';setTimeout(function(){var b=document.getElementById('versionBanner');if(b){b.style.opacity='0';setTimeout(function(){b.style.display='none';},500);}document.body.style.paddingTop='0';},3000);</script>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
@@ -2598,6 +2598,13 @@ function subscribeRealtime() {
         let p2; try{p2=(()=>{try{return JSON.parse(tsRes.data?.parcours||'[]');}catch(e){return [];}})();}catch(e){p2=[];}
         if (p2.length && gameState?.started_at) {
           const s2 = computePhaseFromSchedule(new Date(gameState.started_at).getTime(), p2);
+          // Bip « nouvel indice » — détecté à CHAQUE poll (fiable, indépendant du re-render).
+          if (s2.phase === 'etape') {
+            const shownNow = indicesAffichesNow(s2);
+            if (_lastIndicesStep === s2.blocIdx && shownNow > _lastIndicesShown) beep(760, 0.12);
+            _lastIndicesStep = s2.blocIdx; _lastIndicesShown = shownNow;
+            if (motcleReveleNow(s2) && _lastAnswerRevealStep !== s2.blocIdx) { _lastAnswerRevealStep = s2.blocIdx; beep(880, 0.16); }
+          }
           if (s2.phase !== lastPhase || s2.blocIdx !== lastBlocIdx) {
             const prevPhase   = lastPhase;
             const prevBlocIdx = lastBlocIdx;
