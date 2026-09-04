@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.03-21:55:53</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.04-06:40:05</div>
 <script>document.body.style.transition='padding-top .5s';setTimeout(function(){var b=document.getElementById('versionBanner');if(b){b.style.opacity='0';setTimeout(function(){b.style.display='none';},500);}document.body.style.paddingTop='0';},3000);</script>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
@@ -246,6 +246,46 @@ function beep(freq=700, dur=0.12, vol=0.25) {
   } catch(e) {}
 }
 function beepDouble(f1, f2, gap=120) { beep(f1,0.1); setTimeout(()=>beep(f2,0.13), gap); }
+
+// Programme les bips aux instants EXACTS du planning (énigme, indices, réponse, règles,
+// épreuve) pour l'équipe courante. Idempotent : scheduleTimer déduplique par clé, donc on
+// peut l'appeler à chaque render/poll sans risque de double planification.
+function scheduleAllBips(parcours) {
+  if (!gameState || gameState.status !== 'active' || !gameState.started_at || !parcours || !parcours.length) return;
+  const mult = gameState.time_multiplier || 1;
+  const H = new Date(gameState.started_at).getTime();
+  const virtualNow = H + (Date.now() - H) * mult;
+  let t = H;
+  for (let k = 0; k < parcours.length; k++) {
+    const bloc = parcours[k];
+    const et = appData.etapes.find(e => String(e.id) === String(bloc.etapeId));
+    const ep = et?.epreuveId ? appData.epreuves.find(e => String(e.id) === String(et.epreuveId))
+             : (bloc.epreuveId ? appData.epreuves.find(e => String(e.id) === String(bloc.epreuveId)) : null);
+    const dM  = (bloc.dureeMarche ?? 300) * 1000;
+    const dE  = ((et?.dureeEtape || bloc.dureeEtape || 300)) * 1000;
+    const dEp = ((ep?.duree || bloc.dureeEpreuve || 600)) * 1000;
+    const dR  = ((ep?.dureeRegles || ep?.dureeregles || bloc.dureeRegles || 120)) * 1000;
+    const dBloc = (bloc.dureeBloc || (bloc.dureeMarche||300) + (et?.dureeEtape||300) + (ep?.dureeRegles||ep?.dureeregles||120) + (ep?.duree||600)) * 1000;
+    const delai = Math.max(0, dBloc - dM - dE - dR - dEp);
+    t += delai;
+    const marcheStart = t; t += dM;
+    const etapeStart = t; const etapeEnd = t + dE; t += dE;
+    const reglesStart = t; t += dR;
+    const epreuveStart = t; t += dEp;
+    const notFound = () => !(teamState?.step_idx === k && (teamState?.indices_shown||0) >= 6);
+    const plan = (key, at, fn) => {
+      if (at > virtualNow + 300) scheduleTimer(key, Date.now() + (at - virtualNow) / mult, fn);
+    };
+    if (dM > 0) plan('bip_enigme_'+k, marcheStart, () => beep(660, 0.14));               // nouvelle énigme
+    for (let i = 1; i <= ETAPE_NB_INDICES; i++) {                                        // indices
+      const at = Math.max(etapeStart, etapeEnd - (ETAPE_NB_INDICES + 1 - i) * 60000);
+      plan('bip_indice_'+k+'_'+i, at, () => { if (notFound()) beep(760, 0.12); });
+    }
+    plan('bip_reponse_'+k, etapeEnd - ETAPE_ANSWER_LEAD * 1000, () => { if (notFound()) beep(880, 0.16); }); // réponse
+    if (ep && dR  > 0) plan('bip_regles_'+k,  reglesStart,  () => beep(520, 0.16));      // lecture des règles
+    if (ep && dEp > 0) plan('bip_epreuve_'+k, epreuveStart, () => beepDouble(700, 920)); // nouvelle épreuve
+  }
+}
 
 function showToast({ icon='ℹ️', title='', msg='', type='', duration=4000 }) {
   const el = document.createElement('div');
@@ -647,6 +687,9 @@ function renderTeamView() {
     document.getElementById('teamContent').innerHTML=`<div class="notice">Parcours non configuré. Contactez l'organisateur.</div>`;
     return;
   }
+
+  // Programmer les bips (énigme / indices / réponse / règles / épreuve) aux bons instants.
+  scheduleAllBips(parcours);
 
   const H = gameState?.started_at ? new Date(gameState.started_at).getTime() : Date.now();
   const sched = computePhaseFromSchedule(H, parcours);
@@ -1100,10 +1143,6 @@ function renderEtapeSchedule(sched, parcours) {
   // Nombre d'indices révélés = fonction du temps restant
   const indicesAffiches = indicesAffichesNow(sched);
   const scoreActuel = scoreEtapeLive(indicesAffiches, stepIdx);
-  // Bip à chaque nouvel indice révélé (même étape), et à la révélation de la réponse.
-  if (_lastIndicesStep === stepIdx && indicesAffiches > _lastIndicesShown) beep(760, 0.11);
-  _lastIndicesStep = stepIdx; _lastIndicesShown = indicesAffiches;
-  if (motcleReveleNow(sched) && _lastAnswerRevealStep !== stepIdx) { _lastAnswerRevealStep = stepIdx; beep(880, 0.16); }
 
   // Replanifier un RE-RENDER à chaque prochaine apparition (indices puis réponse)
   const revealTimes = [];
@@ -2285,7 +2324,6 @@ function renderDone() {
 let pollInterval = null;
 let lastPhase = null;
 let lastBlocIdx = null;
-let _lastIndicesStep = -1, _lastIndicesShown = 0, _lastAnswerRevealStep = -1; // suivi pour les bips d'indices
 let motcleSaisi = ''; // préserver la saisie entre les renders
 let renderBloqueUntil = 0; // timestamp ms — bloquer les re-renders du poll jusqu'à ce moment
 
@@ -2598,24 +2636,9 @@ function subscribeRealtime() {
         let p2; try{p2=(()=>{try{return JSON.parse(tsRes.data?.parcours||'[]');}catch(e){return [];}})();}catch(e){p2=[];}
         if (p2.length && gameState?.started_at) {
           const s2 = computePhaseFromSchedule(new Date(gameState.started_at).getTime(), p2);
-          // Bip « nouvel indice » — détecté à CHAQUE poll (fiable, indépendant du re-render).
-          if (s2.phase === 'etape') {
-            const shownNow = indicesAffichesNow(s2);
-            if (_lastIndicesStep === s2.blocIdx && shownNow > _lastIndicesShown) beep(760, 0.12);
-            _lastIndicesStep = s2.blocIdx; _lastIndicesShown = shownNow;
-            if (motcleReveleNow(s2) && _lastAnswerRevealStep !== s2.blocIdx) { _lastAnswerRevealStep = s2.blocIdx; beep(880, 0.16); }
-          }
           if (s2.phase !== lastPhase || s2.blocIdx !== lastBlocIdx) {
             const prevPhase   = lastPhase;
             const prevBlocIdx = lastBlocIdx;
-
-            // Bips de transition de phase (pas au tout premier calcul = prevPhase null).
-            if (prevPhase !== null && s2.phase !== prevPhase) {
-              if (s2.phase === 'marche')                              beep(660, 0.13);      // nouvelle énigme
-              else if (s2.phase === 'etape' && prevPhase !== 'marche') beep(660, 0.13);      // énigme (marche sautée)
-              else if (s2.phase === 'regles')                         beep(520, 0.16);      // lecture des règles
-              else if (s2.phase === 'epreuve')                        beepDouble(700, 920);  // nouvelle épreuve
-            }
 
             // Transition : on QUITTE la phase étape (étape→règles, même bloc) sans avoir
             // validé le mot-clé → 0 pt pour l'étape, enregistré IMMÉDIATEMENT. (Le score
