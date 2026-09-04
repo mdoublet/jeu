@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.04-17:40:33</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.04-18:03:01</div>
 <script>document.body.style.transition='padding-top .5s';setTimeout(function(){var b=document.getElementById('versionBanner');if(b){b.style.opacity='0';setTimeout(function(){b.style.display='none';},500);}document.body.style.paddingTop='0';},3000);</script>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
@@ -268,8 +268,14 @@ const SOUNDS = {
   epreuve:  [{f:523,t:0,d:.13},{f:659,t:.12,d:.13},{f:784,t:.24,d:.13},{f:1046,t:.36,d:.26}], // fanfare
   bonne:    [{f:523,t:0,d:.1},{f:659,t:.09,d:.1},{f:784,t:.18,d:.1},{f:1046,t:.27,d:.22}],     // arpège joyeux
   mauvaise: [{f:392,t:0,d:.16,v:1},{f:311,t:.16,d:.3,v:1}],                            // descendant « faux »
+  festif:   [{f:523,t:0,d:.13},{f:659,t:.12,d:.13},{f:784,t:.24,d:.13},{f:1046,t:.36,d:.16},{f:784,t:.54,d:.11},{f:1046,t:.64,d:.14},{f:1319,t:.76,d:.42,v:1}], // fanfare festive
 };
 function playSound(name) { const s = SOUNDS[name]; if (s) playTones(s); }
+// Évite de rejouer le son festif à chaque re-render d'un même écran de fin.
+const _festifPlayed = new Set();
+function jouerFestifUneFois(cle, score) {
+  if ((score||0) > 0 && !_festifPlayed.has(cle)) { _festifPlayed.add(cle); playSound('festif'); }
+}
 
 // Programme les bips aux instants EXACTS du planning (énigme, indices, réponse, règles,
 // épreuve) pour l'équipe courante. Idempotent : scheduleTimer déduplique par clé, donc on
@@ -1227,6 +1233,7 @@ function renderEtapeSchedule(sched, parcours) {
 
 function renderAttenteFinEpreuve(score, blocIdx) {
   stopTimer();
+  jouerFestifUneFois('ep'+blocIdx, score);
   document.getElementById('teamContent').innerHTML = `
     <div style="text-align:center;padding:28px 20px">
       <div style="font-size:40px;margin-bottom:10px">✅</div>
@@ -1242,6 +1249,7 @@ function renderAttenteFinEpreuve(score, blocIdx) {
 // Épreuve terminée EN AVANCE (avant la fin du temps imparti) : même esprit que l'écran
 // d'attente d'étape → on invite l'équipe à patienter jusqu'à la fin du temps.
 function renderAttenteFinEpreuveEnCours(score, sched) {
+  jouerFestifUneFois('epx'+sched.blocIdx, score);
   const mult = gameState?.time_multiplier || 1;
   const H = gameState?.started_at ? new Date(gameState.started_at).getTime() : Date.now();
   const virtualNow = H + (Date.now()-H)*mult;
@@ -1285,6 +1293,7 @@ function epreuveFinieEnAvance(epreuve, rep) {
 
 function renderAttenteFinEtape(score, stepIdx, parcours) {
   stopTimer();
+  jouerFestifUneFois('et'+stepIdx, score);
   const H = gameState?.started_at ? new Date(gameState.started_at).getTime() : Date.now();
   const mult = gameState?.time_multiplier || 1;
   const virtualNow = H + (Date.now()-H)*mult;
@@ -1503,9 +1512,9 @@ async function validerMotcle() {
     return;
   }
 
-  // ✓ Mot-clé correct
+  // ✓ Mot-clé correct : le son festif (joué par renderAttenteFinEtape si des points
+  // ont été marqués) sert de feedback — on ne joue pas 'bonne' pour éviter le doublon.
   motcleSaisi = '';
-  playSound('bonne');
   logEtapeDetail(stepIdx, etape, {found:true}); // marquer l'étape comme trouvée
   // Vérifier si le temps est encore valide
   const multV = gameState?.time_multiplier || 1;
