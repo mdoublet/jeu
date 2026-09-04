@@ -223,7 +223,7 @@ input[type=file]{display:none}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">ADMIN — v2026.09.04-18:03:01</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">ADMIN — v2026.09.04-18:12:38</div>
 <script>document.body.style.transition='padding-top .5s';setTimeout(function(){var b=document.getElementById('versionBanner');if(b){b.style.opacity='0';setTimeout(function(){b.style.display='none';},500);}document.body.style.paddingTop='0';},3000);</script>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div class="loader-text" id="loaderText">Connexion en cours...</div><div id="loaderError" style="display:none;font-size:12px;color:#A32020;margin-top:8px;max-width:300px;text-align:center"></div></div>
@@ -372,8 +372,18 @@ input[type=file]{display:none}
       </div>
     </div>
     <div id="jdpSuiviContent"></div>
+    <!-- Pages héritées (scoring) conservées masquées pour compat -->
+    <div id="jdpScoring" style="display:none">
+      <input type="number" id="jdpScoreDepart" value="10"><input type="number" id="jdpCoutIndice" value="2">
+      <input type="number" id="jdpPerteTemps" value="1"><input type="number" id="jdpDureeMax" value="10">
+      <input type="number" id="jdpScoreEpreuve" value="10"><div id="jdpScoringPreview"></div><span id="jdpScoringSaveMsg"></span>
+    </div>
+    <div id="jdpScores" style="display:none"><div id="jdpStatGrid"></div><div id="jdpDiaporama"></div><div id="jdpLeaderboard"></div><div id="jdpScoreDetail"></div></div>
+  </div>
+  <div id="aSons" class="page">
     <div class="card">
       <div class="card-title">🔊 Sons (téléphone des joueurs)</div>
+      <p style="font-size:13px;color:var(--ink-muted);margin-bottom:14px">Ces réglages s'appliquent aux bips joués sur le téléphone des joueurs : nouvelle étape/épreuve, nouvel indice, bonne/mauvaise réponse, et fanfare festive en fin d'étape ou d'épreuve réussie.</p>
       <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px"><input type="checkbox" id="sonActif" style="width:16px;height:16px;accent-color:var(--gold-dark)"> Activer les sons</label>
       <div class="field"><div class="field-label">Volume : <span id="sonVolLabel">55</span>%</div>
         <input type="range" id="sonVolume" min="0" max="100" value="55" style="width:100%" oninput="document.getElementById('sonVolLabel').textContent=this.value">
@@ -394,13 +404,6 @@ input[type=file]{display:none}
       <button class="btn btn-gold btn-sm" onclick="saveSons()">💾 Enregistrer les sons</button>
       <span class="save-msg" id="sonSaveMsg">Sauvegardé ✓</span>
     </div>
-    <!-- Pages héritées (scoring) conservées masquées pour compat -->
-    <div id="jdpScoring" style="display:none">
-      <input type="number" id="jdpScoreDepart" value="10"><input type="number" id="jdpCoutIndice" value="2">
-      <input type="number" id="jdpPerteTemps" value="1"><input type="number" id="jdpDureeMax" value="10">
-      <input type="number" id="jdpScoreEpreuve" value="10"><div id="jdpScoringPreview"></div><span id="jdpScoringSaveMsg"></span>
-    </div>
-    <div id="jdpScores" style="display:none"><div id="jdpStatGrid"></div><div id="jdpDiaporama"></div><div id="jdpLeaderboard"></div><div id="jdpScoreDetail"></div></div>
   </div>
 </div>
 
@@ -893,7 +896,8 @@ function setAppNavTabs(role){
     if(titleEl) titleEl.textContent='Game Master';
     el.innerHTML=`
       <button class="nav-tab active" onclick="adminTab('jdp',this)">🎮 Jeu</button>
-      <button class="nav-tab" onclick="adminTab('photos',this)">📸 Photos <span class="notif-badge" id="adminPhotoBadge">0</span></button>`;
+      <button class="nav-tab" onclick="adminTab('photos',this)">📸 Photos <span class="notif-badge" id="adminPhotoBadge">0</span></button>
+      <button class="nav-tab" onclick="adminTab('sons',this)">🔊 Sons</button>`;
   } else {
     if(titleEl) titleEl.textContent='Administration';
     el.innerHTML=`
@@ -902,7 +906,8 @@ function setAppNavTabs(role){
       <button class="nav-tab" onclick="adminTab('epreuves',this)">Épreuves</button>
       <button class="nav-tab" onclick="adminTab('etapes',this)">🧭 Étapes</button>
       <button class="nav-tab" onclick="adminTab('config',this)">Codes</button>
-      <button class="nav-tab" onclick="adminTab('archive',this)">Archives</button>`;
+      <button class="nav-tab" onclick="adminTab('archive',this)">Archives</button>
+      <button class="nav-tab" onclick="adminTab('sons',this)">🔊 Sons</button>`;
   }
 }
 
@@ -1020,7 +1025,7 @@ function logout(){
 function adminTab(name,btn){
   document.querySelectorAll('#adminApp .page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('#adminNavTabs .nav-tab').forEach(b=>b.classList.remove('active'));
-  const map={epreuves:'aEpreuves',etapes:'aEtapes',equipes:'aEquipes',joueurs:'aJoueurs',config:'aConfig',scores:'aScores',photos:'aPhotos',archive:'aArchive',petitbac:'aPetitBac',classement:'aClassement',reset:'aReset',jdp:'aJdp'};
+  const map={epreuves:'aEpreuves',etapes:'aEtapes',equipes:'aEquipes',joueurs:'aJoueurs',config:'aConfig',scores:'aScores',photos:'aPhotos',archive:'aArchive',petitbac:'aPetitBac',classement:'aClassement',reset:'aReset',jdp:'aJdp',sons:'aSons'};
   document.getElementById(map[name]).classList.add('active');btn.classList.add('active');
   if(name==='scores') renderAdminScores();
   if(name==='photos'){renderAdminPhotos();refreshAdminPhotoBadge();}
@@ -1029,7 +1034,8 @@ function adminTab(name,btn){
   if(name==='classement') renderLeaderboard('adminLeaderboard');
   if(name==='joueurs') renderJoueurs();
   if(name==='etapes') renderEtapesTabs();
-  if(name==='jdp'){ renderJdpControle(); renderJdpSuivi(); loadSons(); }
+  if(name==='jdp'){ renderJdpControle(); renderJdpSuivi(); }
+  if(name==='sons') loadSons();
 }
 function gmTab(name,btn){
   document.querySelectorAll('#gmApp .page').forEach(p=>p.classList.remove('active'));
