@@ -150,7 +150,7 @@ input:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
-<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.04-06:40:05</div>
+<div id="versionBanner" style="position:fixed;top:0;left:0;right:0;z-index:100000;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:.5px;color:#fff;background:var(--gold-dark);text-align:center;padding:4px 8px;pointer-events:none;transition:opacity .5s">JEU — v2026.09.04-17:40:33</div>
 <script>document.body.style.transition='padding-top .5s';setTimeout(function(){var b=document.getElementById('versionBanner');if(b){b.style.opacity='0';setTimeout(function(){b.style.display='none';},500);}document.body.style.paddingTop='0';},3000);</script>
 <div id="toastContainer"></div>
 <div id="globalLoader"><div class="loader-ring"></div><div style="font-size:13px;color:var(--ink-muted)">Chargement...</div></div>
@@ -220,8 +220,9 @@ let timerKey      = null;
 function normalize(s) {
   return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[-_'''\s]+/g,' ').trim();
 }
-// ---- Sons (bips) ----
+// ---- Sons ----
 let _audioCtx = null;
+let SND = { on:true, vol:0.55, theme:'doux' }; // réglable depuis l'admin (jp_config)
 function _getAudio() {
   try {
     if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -229,23 +230,46 @@ function _getAudio() {
     return _audioCtx;
   } catch(e) { return null; }
 }
-// Débloquer le son au premier contact (contrainte navigateurs mobiles).
-document.addEventListener('click', _getAudio, {once:true, capture:true});
-document.addEventListener('touchstart', _getAudio, {once:true, capture:true});
-function beep(freq=700, dur=0.12, vol=0.25) {
+// Débloquer le son dès la 1re interaction (contrainte des navigateurs).
+['click','touchstart','keydown','pointerdown'].forEach(ev =>
+  document.addEventListener(ev, _getAudio, {once:true, capture:true}));
+// Applique la config sons (activé / volume / thème) depuis appData.config.
+function applySoundConfig() {
+  const on = appData.config?.['son_actif'];
+  SND.on = (on===undefined||on===null) ? true : (on==='1'||on==='true'||on===true);
+  const v = parseInt(appData.config?.['son_volume']);
+  SND.vol = isFinite(v) ? Math.max(0, Math.min(1, v/100)) : 0.55;
+  SND.theme = appData.config?.['son_theme'] || 'doux';
+}
+// Joue une séquence de notes : [{f:Hz, t:offset s, d:durée s, v:vol relatif}]
+function playTones(notes) {
+  if (!SND.on) return;
   const ctx = _getAudio(); if (!ctx) return;
   try {
     const now = ctx.currentTime;
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = 'sine'; o.frequency.setValueAtTime(freq, now);
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(vol, now+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, now+dur);
-    o.start(now); o.stop(now+dur+0.03);
+    const wave = SND.theme==='arcade' ? 'square' : (SND.theme==='cloche' ? 'sine' : 'triangle');
+    notes.forEach(n => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = wave; o.frequency.value = n.f;
+      o.connect(g); g.connect(ctx.destination);
+      const start = now + (n.t||0), dur = n.d||0.15, peak = Math.max(0.0001, SND.vol*(n.v||1));
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start+0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+      o.start(start); o.stop(start+dur+0.03);
+    });
   } catch(e) {}
 }
-function beepDouble(f1, f2, gap=120) { beep(f1,0.1); setTimeout(()=>beep(f2,0.13), gap); }
+const SOUNDS = {
+  enigme:   [{f:523,t:0,d:.16},{f:784,t:.12,d:.22}],                                   // montée douce
+  indice:   [{f:880,t:0,d:.12},{f:1319,t:.09,d:.16}],                                  // petit « ding » clair
+  reponse:  [{f:784,t:0,d:.14},{f:1046,t:.1,d:.22}],                                   // révélation
+  regles:   [{f:659,t:0,d:.2,v:.9},{f:880,t:.16,d:.2,v:.9}],                           // neutre
+  epreuve:  [{f:523,t:0,d:.13},{f:659,t:.12,d:.13},{f:784,t:.24,d:.13},{f:1046,t:.36,d:.26}], // fanfare
+  bonne:    [{f:523,t:0,d:.1},{f:659,t:.09,d:.1},{f:784,t:.18,d:.1},{f:1046,t:.27,d:.22}],     // arpège joyeux
+  mauvaise: [{f:392,t:0,d:.16,v:1},{f:311,t:.16,d:.3,v:1}],                            // descendant « faux »
+};
+function playSound(name) { const s = SOUNDS[name]; if (s) playTones(s); }
 
 // Programme les bips aux instants EXACTS du planning (énigme, indices, réponse, règles,
 // épreuve) pour l'équipe courante. Idempotent : scheduleTimer déduplique par clé, donc on
@@ -276,14 +300,14 @@ function scheduleAllBips(parcours) {
     const plan = (key, at, fn) => {
       if (at > virtualNow + 300) scheduleTimer(key, Date.now() + (at - virtualNow) / mult, fn);
     };
-    if (dM > 0) plan('bip_enigme_'+k, marcheStart, () => beep(660, 0.14));               // nouvelle énigme
+    if (dM > 0) plan('bip_enigme_'+k, marcheStart, () => playSound('enigme'));               // nouvelle énigme
     for (let i = 1; i <= ETAPE_NB_INDICES; i++) {                                        // indices
       const at = Math.max(etapeStart, etapeEnd - (ETAPE_NB_INDICES + 1 - i) * 60000);
-      plan('bip_indice_'+k+'_'+i, at, () => { if (notFound()) beep(760, 0.12); });
+      plan('bip_indice_'+k+'_'+i, at, () => { if (notFound()) playSound('indice'); });
     }
-    plan('bip_reponse_'+k, etapeEnd - ETAPE_ANSWER_LEAD * 1000, () => { if (notFound()) beep(880, 0.16); }); // réponse
-    if (ep && dR  > 0) plan('bip_regles_'+k,  reglesStart,  () => beep(520, 0.16));      // lecture des règles
-    if (ep && dEp > 0) plan('bip_epreuve_'+k, epreuveStart, () => beepDouble(700, 920)); // nouvelle épreuve
+    plan('bip_reponse_'+k, etapeEnd - ETAPE_ANSWER_LEAD * 1000, () => { if (notFound()) playSound('reponse'); }); // réponse
+    if (ep && dR  > 0) plan('bip_regles_'+k,  reglesStart,  () => playSound('regles'));      // lecture des règles
+    if (ep && dEp > 0) plan('bip_epreuve_'+k, epreuveStart, () => playSound('epreuve')); // nouvelle épreuve
   }
 }
 
@@ -373,6 +397,7 @@ async function init() {
     const etapesRow = config.find(r=>r.key==='jdp_etapes');
     if (etapesRow) appData.etapes = JSON.parse(etapesRow.value);
   } catch(e) {}
+  applySoundConfig();
 
   document.getElementById('globalLoader').style.display = 'none';
   const sess = loadSession();
@@ -1473,12 +1498,14 @@ async function validerMotcle() {
     // Feedback via toast (survit au re-render) + re-render complet pour que TOUS les
     // affichages du score se mettent à jour (bandeau ET carré de la barre de progression).
     showToast({icon:'❌', title:`Mot-clé incorrect — −${ETAPE_PENALITE_ERREUR} pt`, msg:`Score possible : ${potentiel} pt${potentiel!==1?'s':''}`, duration:5000});
+    playSound('mauvaise');
     renderTeamView();
     return;
   }
 
   // ✓ Mot-clé correct
   motcleSaisi = '';
+  playSound('bonne');
   logEtapeDetail(stepIdx, etape, {found:true}); // marquer l'étape comme trouvée
   // Vérifier si le temps est encore valide
   const multV = gameState?.time_multiplier || 1;
@@ -2027,6 +2054,7 @@ async function pbSaisir(lettre, valeur) {
   // Marquer si correct
   const villes = (appData.villesBac[lettre]||[]).map(normVille);
   reponses[lettre+'_correct'] = villes.includes(normVille(valeur));
+  if (valeur.trim()) playSound(reponses[lettre+'_correct'] ? 'bonne' : 'mauvaise');
   // Calculer et sauvegarder ep_N immédiatement
   const parcoursPb = getParcours();
   const Hpb = gameState?.started_at ? new Date(gameState.started_at).getTime() : Date.now();
@@ -2115,7 +2143,7 @@ async function repQCM(rep) {
   // Journaliser la réponse (quizz des mariés)
   const anecTri = (appData.anecdotes||[]).slice().sort((a,b)=>(a.ordre||0)-(b.ordre||0));
   const aQ = anecTri[qIdx];
-  if (aQ) logReponseDetail('maries', aQ.celui_qui, aQ.reponse, rep, rep===aQ.reponse);
+  if (aQ) { logReponseDetail('maries', aQ.celui_qui, aQ.reponse, rep, rep===aQ.reponse); playSound(rep===aQ.reponse?'bonne':'mauvaise'); }
   renderTeamView();
 }
 async function qcmSuivant() {
@@ -2225,6 +2253,7 @@ async function friseRepondre(nomChoisi) {
   const correct = nomChoisi === j.nom;
   reponses[qIdx] = nomChoisi;
   reponses[qIdx+'_correct'] = correct;
+  playSound(correct ? 'bonne' : 'mauvaise');
   // Sauvegarder ep_N immédiatement
   const parcoursF = getParcours();
   const Hf = gameState?.started_at ? new Date(gameState.started_at).getTime() : Date.now();
@@ -2560,6 +2589,7 @@ function subscribeRealtime() {
       .on('postgres_changes',{event:'*',schema:'public',table:'jp_config'}, p=>{
         if (!p.new) return;
         appData.config[p.new.key]=p.new.value;
+        if (p.new.key && p.new.key.startsWith('son_')) applySoundConfig();
         if (p.new.key.startsWith('jdp_capitaine_')) {
           appData.capitaines[p.new.key.replace('jdp_capitaine_','')]=p.new.value;
           isCaptain=appData.capitaines[currentTeam]===currentPlayer;
@@ -2701,8 +2731,8 @@ function subscribeRealtime() {
         if (_lastPhotoSig !== null && sig !== _lastPhotoSig) {
           (phs||[]).forEach(p => {
             if (_photoStatusMap[p.id] === 'en_attente' && p.statut !== 'en_attente') {
-              if (p.statut === 'validee') { showToast({icon:'✅',title:`Photo validée — +${p.points||0} pts`,type:'success'}); beepDouble(660, 990); }
-              else if (p.statut === 'refusee') { showToast({icon:'❌',title:'Photo refusée',msg:'Tu peux soumettre un nouvel essai.'}); beep(300, 0.25); }
+              if (p.statut === 'validee') { showToast({icon:'✅',title:`Photo validée — +${p.points||0} pts`,type:'success'}); playSound('bonne'); }
+              else if (p.statut === 'refusee') { showToast({icon:'❌',title:'Photo refusée',msg:'Tu peux soumettre un nouvel essai.'}); playSound('mauvaise'); }
             }
           });
           _lastSyncPhotos = 0; // forcer le re-sync depuis la table photos
