@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caroline & Marc — Le jeu des anecdotes</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --cream:#EEF4F7;--warm-white:#F5F9FB;
+  --gold:#1E6A7A;--gold-light:#C8DFE5;--gold-dark:#134D5A;
+  --ink:#0D2B33;--ink-soft:#2A4F5A;--ink-muted:#5A7D87;
+  --border:#B8D0D8;--border-strong:#7AAAB8;
+  --success-bg:#E6F4EC;--success:#1E7A45;
+  --danger:#A32020;--danger-bg:#FCEAEA;--info-bg:#E5F0F5;
+  --amber-bg:#FFF8EC;--amber:#B8620A;
+  --radius:12px;--radius-sm:8px;--radius-pill:24px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--cream)}
+body{font-family:'DM Sans',sans-serif;color:var(--ink);min-height:100vh;max-width:480px;margin:0 auto;padding:20px 16px 96px;line-height:1.5}
+h1{font-family:'Playfair Display',serif;font-size:23px;color:var(--gold-dark);margin-bottom:4px}
+.sub{color:var(--ink-muted);font-size:13.5px;margin-bottom:18px}
+.card{background:var(--warm-white);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+.field-label{font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px}
+select,input[type=text]{width:100%;padding:11px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:#fff;font-family:'DM Sans',sans-serif;font-size:15px;color:var(--ink)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;border-radius:var(--radius-pill);border:1px solid var(--gold-dark);background:var(--gold);color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn.secondary{background:transparent;color:var(--gold-dark)}
+.btn.full{width:100%}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.err{color:var(--danger);font-size:13px;margin-top:8px;display:none}
+.timer-band{position:sticky;top:0;z-index:5;background:var(--gold-dark);color:#fff;border-radius:var(--radius);padding:12px 16px;text-align:center;margin-bottom:12px}
+.timer-band .lbl{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;opacity:.85}
+.timer-band .val{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+.timer-band.ended{background:var(--danger)}
+.rules-toggle{width:100%;text-align:left;background:var(--amber-bg);border:1px solid #EAD3A8;color:var(--amber);padding:12px 14px;border-radius:var(--radius-sm);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.rules-body{background:var(--warm-white);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;font-size:14px;color:var(--ink-soft)}
+.rules-body ul{margin:8px 0 0 18px}
+.rules-body li{margin-bottom:6px}
+.anec{display:flex;flex-direction:column;gap:10px}
+.anec-num{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;border-radius:50%;background:var(--gold-light);color:var(--gold-dark);font-weight:600;font-size:13px;flex-shrink:0}
+.anec-head{display:flex;gap:10px;align-items:flex-start}
+.anec-text{font-size:15px;color:var(--ink);flex:1}
+.bottom-bar{position:fixed;left:0;right:0;bottom:0;background:var(--warm-white);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:10px;max-width:480px;margin:0 auto}
+.bottom-bar .btn{flex:1}
+.progress{font-size:12.5px;color:var(--ink-muted);text-align:center;margin:2px 0 12px}
+.result-ok{border-left:4px solid var(--success)}
+.result-ko{border-left:4px solid var(--danger)}
+.badge{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:var(--radius-pill)}
+.badge.ok{background:var(--success-bg);color:var(--success)}
+.badge.ko{background:var(--danger-bg);color:var(--danger)}
+.score-hero{text-align:center;padding:20px}
+.score-hero .num{font-size:60px;font-family:'Playfair Display',serif;color:var(--gold-dark);line-height:1}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;background:var(--gold-dark);color:#fff;padding:11px 18px;border-radius:var(--radius-pill);font-size:14px;font-weight:500;z-index:20;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90%}
+.toast.show{opacity:1}
+.muted{color:var(--ink-muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<!-- ÉCRAN DE CONNEXION -->
+<div id="loginScreen">
+  <h1>🎭 Le jeu des anecdotes</h1>
+  <div class="sub">Caroline & Marc · La suite du jeu de piste</div>
+  <div class="card">
+    <div class="field-label">Qui es-tu ?</div>
+    <select id="playerSelect"><option value="">— Choisis ton prénom —</option></select>
+    <div class="muted" style="margin-top:8px">Sélectionne ton prénom dans la liste. Si plusieurs invités portent le même prénom, l'initiale du nom est indiquée.</div>
+    <button class="btn full" style="margin-top:14px" id="loginBtn" onclick="login()">Commencer →</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+  <div class="muted" id="loginStatus">Chargement…</div>
+</div>
+
+<!-- ÉCRAN DE JEU -->
+<div id="gameScreen" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+    <h1 style="margin:0">🎭 Anecdotes</h1>
+    <button class="btn secondary" style="padding:6px 14px;font-size:13px" onclick="logout()">Quitter</button>
+  </div>
+  <div class="sub" id="gameWho" style="margin-bottom:12px"></div>
+
+  <div class="timer-band" id="timerBand">
+    <div class="lbl">Temps restant pour jouer</div>
+    <div class="val" id="timerVal">—</div>
+  </div>
+
+  <button class="rules-toggle" onclick="toggleRules()"><span>📖 Règles du jeu</span><span id="rulesChevron">▸</span></button>
+  <div class="rules-body" id="rulesBody" style="display:none">
+    <strong>Le but :</strong> retrouver à quel invité correspond chaque anecdote de <strong>ton équipe</strong>.
+    <ul>
+      <li>Chaque anecdote ci-dessous concerne un membre de ton équipe.</li>
+      <li>En face de chacune, choisis le prénom de l'invité que tu penses être le bon — parmi <strong>tous les invités</strong> des quatre équipes.</li>
+      <li>Tu peux <strong>sauvegarder</strong> à tout moment et revenir plus tard.</li>
+      <li>Quand tu as répondu à tout, tu peux <strong>soumettre</strong> : une seule fois !</li>
+      <li><strong>+1 point</strong> par bonne réponse. Aucune mauvaise réponse n'enlève de point.</li>
+      <li>Si deux invités ont le même prénom, ce prénom n'apparaît qu'une fois et est compté juste dans tous les cas.</li>
+    </ul>
+  </div>
+
+  <div class="progress" id="progress"></div>
+  <div id="anecList"></div>
+</div>
+
+<!-- ÉCRAN DE RÉSULTAT -->
+<div id="resultScreen" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+    <h1 style="margin:0">🎉 Bravo !</h1>
+    <button class="btn secondary" style="padding:6px 14px;font-size:13px" onclick="logout()">Quitter</button>
+  </div>
+  <div class="card score-hero">
+    <div class="muted">Ton score</div>
+    <div class="num" id="scoreNum">—</div>
+    <div class="muted" id="scoreOutOf"></div>
+  </div>
+  <div id="resultList"></div>
+</div>
+
+<div class="bottom-bar" id="bottomBar" style="display:none">
+  <button class="btn secondary" id="saveBtn" onclick="save()">💾 Sauvegarder</button>
+  <button class="btn" id="submitBtn" onclick="submitAnswers()">✅ Soumettre</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL='https://ktpiwlcazmodfezrwlqf.supabase.co';
+const SUPABASE_KEY='sb_publishable_rcKC1bFMte1P2qW6OSdiTw_w4KoVfQl';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false, autoRefreshToken:false } });
+
+// Date limite : samedi soir 12 septembre 2026 à minuit (= début du dimanche 13, heure de Paris CEST = UTC+2)
+const DEADLINE = new Date('2026-09-13T00:00:00+02:00').getTime();
+
+let JOUEURS = [];        // {nom, equipe_nom, anecdote}
+let PRENOM_OPTIONS = []; // prénoms uniques (affichage), triés
+let me = null;           // le joueur connecté
+let myAnecdotes = [];    // anecdotes de mon équipe [{nom, prenom, anecdote}]
+let myRow = null;        // ligne sauvegardée {reponses, soumis, score, ...}
+let timerInt = null;
+
+function normalize(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-_'’‘\s]+/g,' ').trim(); }
+function prenomDe(nom){ return (nom||'').trim().split(/\s+/)[0] || ''; }
+function slug(nom){ return normalize(nom).replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
+function keyFor(nom){ return 'jeu2_p_'+slug(nom); }
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+function deadlinePassed(){ return Date.now() >= DEADLINE; }
+
+async function init(){
+  try{
+    const { data, error } = await db.from('joueurs').select('nom,equipe_nom,anecdote');
+    if(error) throw error;
+    JOUEURS = (data||[]).filter(j=>j.nom && j.equipe_nom);
+    buildLoginList();
+    buildPrenomOptions();
+    document.getElementById('loginStatus').textContent = JOUEURS.length+' invités chargés.';
+  }catch(e){
+    console.error(e);
+    document.getElementById('loginStatus').textContent = 'Erreur de chargement : '+(e?.message||e);
+  }
+}
+
+// Liste de connexion : prénom, + initiale(s) du nom si le prénom est partagé
+function buildLoginList(){
+  const byPrenom = {};
+  JOUEURS.forEach(j=>{ const p=normalize(prenomDe(j.nom)); (byPrenom[p]=byPrenom[p]||[]).push(j); });
+  const items = JOUEURS.map(j=>{
+    const p = normalize(prenomDe(j.nom));
+    const dup = byPrenom[p].length > 1;
+    let label = prenomDe(j.nom);
+    if(dup){
+      const rest = j.nom.trim().split(/\s+/).slice(1);
+      const initiales = rest.map(w=>w[0].toUpperCase()+'.').join('');
+      label += ' '+(initiales||'?');
+    }
+    return { nom:j.nom, label };
+  }).sort((a,b)=>a.label.localeCompare(b.label,'fr'));
+  const sel = document.getElementById('playerSelect');
+  items.forEach(it=>{ const o=document.createElement('option'); o.value=it.nom; o.textContent=it.label; sel.appendChild(o); });
+}
+
+// Prénoms proposés en réponse : uniques (dédoublonnés), tous invités confondus
+function buildPrenomOptions(){
+  const seen = new Set(); const list = [];
+  JOUEURS.forEach(j=>{ const p=prenomDe(j.nom); const n=normalize(p); if(p && !seen.has(n)){ seen.add(n); list.push(p); } });
+  list.sort((a,b)=>a.localeCompare(b,'fr'));
+  PRENOM_OPTIONS = list;
+}
+
+async function login(){
+  const errEl = document.getElementById('loginErr'); errEl.style.display='none';
+  const nom = document.getElementById('playerSelect').value;
+  if(!nom){ errEl.textContent='Choisis ton prénom dans la liste.'; errEl.style.display='block'; return; }
+  me = JOUEURS.find(j=>j.nom===nom);
+  if(!me){ errEl.textContent='Invité introuvable.'; errEl.style.display='block'; return; }
+
+  // Anecdotes de mon équipe (membres ayant une anecdote)
+  myAnecdotes = JOUEURS
+    .filter(j=>j.equipe_nom===me.equipe_nom && (j.anecdote||'').trim())
+    .map(j=>({ nom:j.nom, prenom:prenomDe(j.nom), anecdote:j.anecdote.trim() }))
+    .sort((a,b)=>a.nom.localeCompare(b.nom,'fr'));
+
+  // Charger une éventuelle sauvegarde
+  try{
+    const { data } = await db.from('jp_config').select('value').eq('key', keyFor(me.nom)).maybeSingle();
+    myRow = data && data.value ? JSON.parse(data.value) : null;
+  }catch(e){ myRow = null; }
+
+  document.getElementById('loginScreen').style.display='none';
+  if(myRow && myRow.soumis){ renderResult(); }
+  else { renderGame(); }
+}
+
+function logout(){
+  if(timerInt) clearInterval(timerInt);
+  me=null; myRow=null; myAnecdotes=[];
+  document.getElementById('gameScreen').style.display='none';
+  document.getElementById('resultScreen').style.display='none';
+  document.getElementById('bottomBar').style.display='none';
+  document.getElementById('playerSelect').value='';
+  document.getElementById('loginScreen').style.display='block';
+}
+
+function toggleRules(){
+  const b=document.getElementById('rulesBody'); const c=document.getElementById('rulesChevron');
+  const open = b.style.display==='none';
+  b.style.display = open?'block':'none'; c.textContent = open?'▾':'▸';
+}
+
+function optionsHtml(selected){
+  let h = '<option value="">— choisir —</option>';
+  PRENOM_OPTIONS.forEach(p=>{ const sel = normalize(p)===normalize(selected||'') ? ' selected':''; h+=`<option value="${p.replace(/"/g,'&quot;')}"${sel}>${p}</option>`; });
+  return h;
+}
+
+function renderGame(){
+  document.getElementById('gameScreen').style.display='block';
+  document.getElementById('resultScreen').style.display='none';
+  document.getElementById('gameWho').textContent = `${prenomDe(me.nom)} · équipe ${me.equipe_nom}`;
+  const saved = (myRow && myRow.reponses) ? myRow.reponses : {};
+
+  if(myAnecdotes.length===0){
+    document.getElementById('anecList').innerHTML = '<div class="card muted">Aucune anecdote n\'est enregistrée pour ton équipe pour l\'instant.</div>';
+    document.getElementById('bottomBar').style.display='none';
+  } else {
+    document.getElementById('anecList').innerHTML = myAnecdotes.map((a,i)=>`
+      <div class="card anec">
+        <div class="anec-head">
+          <span class="anec-num">${i+1}</span>
+          <div class="anec-text">${escapeHtml(a.anecdote)}</div>
+        </div>
+        <div>
+          <div class="field-label">À ton avis, de qui s'agit-il ?</div>
+          <select class="ansSel" data-nom="${escapeHtml(a.nom)}" onchange="updateProgress()">${optionsHtml(saved[a.nom])}</select>
+        </div>
+      </div>`).join('');
+    document.getElementById('bottomBar').style.display='flex';
+  }
+
+  startTimer();
+  updateProgress();
+}
+
+function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function collectAnswers(){
+  const out = {};
+  document.querySelectorAll('.ansSel').forEach(sel=>{ const v=sel.value.trim(); if(v) out[sel.dataset.nom]=v; });
+  return out;
+}
+
+function updateProgress(){
+  const total = myAnecdotes.length;
+  const done = Object.keys(collectAnswers()).length;
+  const prog = document.getElementById('progress');
+  const ended = deadlinePassed();
+  prog.textContent = ended ? 'Le temps est écoulé — le jeu est terminé.' : `${done} / ${total} anecdote${total>1?'s':''} remplie${done>1?'s':''}`;
+  const submitBtn = document.getElementById('submitBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  if(ended){ submitBtn.disabled=true; saveBtn.disabled=true; return; }
+  saveBtn.disabled=false;
+  submitBtn.disabled = !(total>0 && done===total);
+}
+
+function startTimer(){
+  if(timerInt) clearInterval(timerInt);
+  const tick=()=>{
+    const band=document.getElementById('timerBand'); const val=document.getElementById('timerVal');
+    let diff = DEADLINE - Date.now();
+    if(diff<=0){
+      band.classList.add('ended'); val.textContent='Terminé';
+      band.querySelector('.lbl').textContent='Le jeu est clôturé';
+      document.querySelectorAll('.ansSel').forEach(s=>s.disabled=true);
+      updateProgress();
+      if(timerInt) clearInterval(timerInt);
+      return;
+    }
+    const d=Math.floor(diff/86400000); diff-=d*86400000;
+    const h=Math.floor(diff/3600000); diff-=h*3600000;
+    const m=Math.floor(diff/60000); diff-=m*60000;
+    const s=Math.floor(diff/1000);
+    const pad=n=>String(n).padStart(2,'0');
+    val.textContent = (d>0? d+'j ':'') + pad(h)+'h '+pad(m)+'m '+pad(s)+'s';
+  };
+  tick(); timerInt=setInterval(tick,1000);
+}
+
+async function save(){
+  if(deadlinePassed()){ toast('Le temps est écoulé.'); return; }
+  const btn=document.getElementById('saveBtn'); btn.disabled=true;
+  const ok = await persist(false);
+  btn.disabled=false;
+  toast(ok ? 'Réponses sauvegardées ✓' : 'Échec de la sauvegarde');
+  updateProgress();
+}
+
+async function submitAnswers(){
+  if(deadlinePassed()){ toast('Le temps est écoulé.'); return; }
+  const answers = collectAnswers();
+  if(Object.keys(answers).length !== myAnecdotes.length){ toast('Réponds à toutes les anecdotes avant de soumettre.'); return; }
+  if(!confirm('Soumettre définitivement tes réponses ? Tu ne pourras plus les modifier.')) return;
+  const btn=document.getElementById('submitBtn'); btn.disabled=true;
+  const ok = await persist(true);
+  if(!ok){ btn.disabled=false; toast('Échec de l\'envoi, réessaie.'); return; }
+  renderResult();
+}
+
+function computeScore(answers){
+  let sc=0;
+  myAnecdotes.forEach(a=>{ if(normalize(answers[a.nom]||'')===normalize(a.prenom)) sc++; });
+  return sc;
+}
+
+async function persist(soumis){
+  const answers = collectAnswers();
+  const now = new Date().toISOString();
+  const row = {
+    nom: me.nom, prenom: prenomDe(me.nom), equipe: me.equipe_nom,
+    reponses: answers,
+    soumis: !!soumis,
+    score: soumis ? computeScore(answers) : (myRow?.score ?? null),
+    started_at: myRow?.started_at || now,
+    submitted_at: soumis ? now : (myRow?.submitted_at || null),
+    updated_at: now
+  };
+  try{
+    const { error } = await db.from('jp_config').upsert({ key: keyFor(me.nom), value: JSON.stringify(row) }, { onConflict:'key' });
+    if(error) throw error;
+    myRow = row;
+    return true;
+  }catch(e){ console.error('persist', e); return false; }
+}
+
+function renderResult(){
+  if(timerInt) clearInterval(timerInt);
+  document.getElementById('gameScreen').style.display='none';
+  document.getElementById('bottomBar').style.display='none';
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('resultScreen').style.display='block';
+
+  const answers = myRow.reponses||{};
+  const score = (typeof myRow.score==='number') ? myRow.score : computeScore(answers);
+  const total = myAnecdotes.length || Object.keys(answers).length;
+  document.getElementById('scoreNum').textContent = score;
+  document.getElementById('scoreOutOf').textContent = `sur ${total} anecdote${total>1?'s':''}`;
+
+  document.getElementById('resultList').innerHTML = myAnecdotes.map((a,i)=>{
+    const rep = answers[a.nom]||'';
+    const ok = normalize(rep)===normalize(a.prenom);
+    return `<div class="card ${ok?'result-ok':'result-ko'} anec">
+      <div class="anec-head"><span class="anec-num">${i+1}</span><div class="anec-text">${escapeHtml(a.anecdote)}</div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="muted">Ta réponse : <strong style="color:var(--ink)">${escapeHtml(rep||'—')}</strong></span>
+        <span class="badge ${ok?'ok':'ko'}">${ok?'✓ Bonne réponse':'✗ C\'était '+escapeHtml(a.prenom)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+init();
+</script>
+</body>
+</html>
