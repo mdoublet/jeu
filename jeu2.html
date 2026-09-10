@@ -156,6 +156,30 @@ function shuffleSeeded(arr, seedStr){
   return a;
 }
 
+// Mémoire de l'appareil : noms déjà utilisés pour se connecter ici (le 1er = identité d'origine).
+function loadDeviceNoms(){ try{ return JSON.parse(localStorage.getItem('jeu2_device_noms')||'[]'); }catch(e){ return []; } }
+function addDeviceNom(nom){ try{ const a=loadDeviceNoms(); if(!a.some(n=>normalize(n)===normalize(nom))) a.push(nom); localStorage.setItem('jeu2_device_noms', JSON.stringify(a)); }catch(e){} }
+
+// Enregistre une alerte « potentielle triche » sur la ligne du joueur, sans écraser ses réponses.
+async function recordAlert(nom, autresNoms){
+  try{
+    const base = myRow || {};
+    const merged = (base.alerte_noms||[]).slice();
+    (autresNoms||[]).forEach(n=>{ if(n && !merged.some(x=>normalize(x)===normalize(n))) merged.push(n); });
+    const nowIso = new Date().toISOString();
+    const row = Object.assign({
+      nom, prenom: prenomDe(nom), equipe: me.equipe_nom,
+      reponses:{}, soumis:false, score:null, started_at:null, submitted_at:null
+    }, base, {
+      nom, prenom: prenomDe(nom), equipe: me.equipe_nom,
+      alerte:true, alerte_noms:merged, alerte_at:(base.alerte_at||nowIso), updated_at:nowIso
+    });
+    const { error } = await db.from('jp_config').upsert({ key:keyFor(nom), value:JSON.stringify(row) }, { onConflict:'key' });
+    if(error) throw error;
+    myRow = row;
+  }catch(e){ console.error('recordAlert', e); }
+}
+
 async function init(){
   try{
     const { data, error } = await db.from('joueurs').select('nom,equipe_nom,anecdote');
@@ -220,6 +244,20 @@ async function login(){
     const { data } = await db.from('jp_config').select('value').eq('key', keyFor(me.nom)).maybeSingle();
     myRow = data && data.value ? JSON.parse(data.value) : null;
   }catch(e){ myRow = null; }
+
+  // Détection multi-identité sur le même appareil (anti-triche « best effort »).
+  const devNoms = loadDeviceNoms();
+  const first = devNoms[0];
+  if(first && normalize(first)!==normalize(me.nom)){
+    const proceed = confirm(
+      `⚠️ Cet appareil s'est déjà connecté sous le nom « ${first} ».\n\n`+
+      `Si tu continues sous « ${prenomDe(me.nom)} », cette connexion sera enregistrée `+
+      `comme une tentative potentielle de triche.\n\nContinuer quand même ?`
+    );
+    if(!proceed){ me=null; myAnecdotes=[]; myRow=null; return; }
+    await recordAlert(me.nom, devNoms);
+  }
+  addDeviceNom(me.nom);
 
   document.getElementById('loginScreen').style.display='none';
   if(myRow && myRow.soumis){ renderResult(); }
@@ -356,6 +394,9 @@ async function persist(soumis){
     score: soumis ? computeScore(answers) : (myRow?.score ?? null),
     started_at: myRow?.started_at || now,
     submitted_at: soumis ? now : (myRow?.submitted_at || null),
+    alerte: myRow?.alerte || false,
+    alerte_noms: myRow?.alerte_noms || [],
+    alerte_at: myRow?.alerte_at || null,
     updated_at: now
   };
   try{
