@@ -130,8 +130,8 @@ const SUPABASE_KEY='sb_publishable_rcKC1bFMte1P2qW6OSdiTw_w4KoVfQl';
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:false, autoRefreshToken:false } });
 
-// Date limite : samedi soir 12 septembre 2026 à minuit (= début du dimanche 13, heure de Paris CEST = UTC+2)
-const DEADLINE = new Date('2026-09-13T00:00:00+02:00').getTime();
+// Date limite : dimanche 13 septembre 2026 à minuit (= fin du dimanche, début du lundi 14, heure de Paris CEST = UTC+2)
+const DEADLINE = new Date('2026-09-14T00:00:00+02:00').getTime();
 
 let JOUEURS = [];        // {nom, equipe_nom, anecdote}
 let PRENOM_OPTIONS = []; // prénoms uniques (affichage), triés
