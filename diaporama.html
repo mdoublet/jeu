@@ -114,6 +114,30 @@ const params = new URLSearchParams(location.search);
 const MODE  = params.get('mode') === 'archive' ? 'archive' : 'live';
 const LABEL = params.get('label') || null;
 
+// Verrouillage : le diaporama n'est accessible aux joueurs qu'à partir du
+// lundi 14 septembre 2026 à 00h01 (heure de Paris), pour ne pas dévoiler les
+// réponses du jeu des anecdotes avant la fin. L'organisateur peut passer outre
+// avec le paramètre ?force=1 (ajouté par les boutons de l'admin).
+const RELEASE = new Date('2026-09-14T00:01:00+02:00').getTime();
+const BYPASS  = params.get('force')==='1' || params.get('admin')==='1';
+function showLocked(){
+  document.getElementById('loader').style.display='none';
+  const box=document.getElementById('errBox'); box.style.display='flex';
+  const msg=document.getElementById('errMsg');
+  const fmt=()=>{
+    let diff=RELEASE-Date.now();
+    if(diff<=0){ location.reload(); return; }
+    const d=Math.floor(diff/86400000); diff-=d*86400000;
+    const h=Math.floor(diff/3600000); diff-=h*3600000;
+    const m=Math.floor(diff/60000); diff-=m*60000;
+    const s=Math.floor(diff/1000); const pad=n=>String(n).padStart(2,'0');
+    msg.innerHTML='🔒 Le diaporama sera disponible<br><strong>le lundi 14 septembre 2026 à 00h01</strong>.<br><br>'+
+      'Pensez d\'abord à soumettre vos réponses au jeu des anecdotes !<br><br>'+
+      '<span style="font-size:26px;font-weight:600;font-variant-numeric:tabular-nums">'+(d>0?d+'j ':'')+pad(h)+'h '+pad(m)+'m '+pad(s)+'s</span>';
+  };
+  fmt(); setInterval(fmt,1000);
+}
+
 // Durées (secondes) — chargées depuis jp_config, avec valeurs par défaut
 let DUR = { slide:9, photo:5, final:22 };
 
@@ -486,7 +510,11 @@ function showError(msg){
   document.getElementById('errBox').style.display='flex';
 }
 
-load().catch(e=>{ console.error(e); showError('Erreur de chargement : '+(e?.message||e)); });
+if (Date.now() < RELEASE && !BYPASS) {
+  showLocked();
+} else {
+  load().catch(e=>{ console.error(e); showError('Erreur de chargement : '+(e?.message||e)); });
+}
 </script>
 </body>
 </html>
